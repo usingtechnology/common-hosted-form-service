@@ -67,20 +67,20 @@ const service = {
     try {
       // identity_provider_* will be undefined if user login is to local keycloak (userid/password)
       const {
-        idp_userid: idpUserId,
-        idp_username: identity,
+        idir_user_guid: idpUserId,
+        idir_username: identity,
         identity_provider: idp,
         preferred_username: username,
         given_name: firstName,
         family_name: lastName,
-        sub: keycloakId,
+        idir_user_guid: keycloakId,
         name: fullName,
         email,
-      } = token.content;
+      } = token;
 
       return {
         idpUserId: idpUserId,
-        keycloakId: keycloakId,
+        keycloakId: keycloakId.replace(/([0-z]{8})([0-z]{4})([0-z]{4})([0-z]{4})([0-z]{12})/, '$1-$2-$3-$4-$5'),
         username: identity ? identity : username,
         firstName: firstName,
         lastName: lastName,
@@ -124,7 +124,11 @@ const service = {
     }
 
     // return with the db id...
-    return { id: user.id, usernameIdp: user.idpCode ? `${user.username}@${user.idpCode}` : user.username, ...userInfo };
+    return {
+      id: user.id,
+      usernameIdp: user.idpCode ? `${user.username}@${user.idpCode}` : user.username,
+      ...userInfo,
+    };
   },
 
   getUserForms: async (userInfo, params = {}) => {

@@ -139,7 +139,7 @@ function loadKeycloak(config) {
   };
 
   const options = Object.assign({}, defaultParams, {
-    init: { onLoad: 'check-sso' },
+    init: { pkceMethod: 'S256', checkLoginIframe: false, onLoad: 'check-sso' },
     config: {
       clientId: config.keycloak.clientId,
       realm: config.keycloak.realm,

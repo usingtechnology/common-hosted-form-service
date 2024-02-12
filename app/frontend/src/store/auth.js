@@ -102,6 +102,7 @@ export const useAuthStore = defineStore('auth', {
 
         if (options.idpHint) {
           // Redirect to Keycloak if idpHint is available
+          //this.keycloak.login(options);
           window.location.replace(this.createLoginUrl(options));
         } else {
           // Navigate to internal login page if no idpHint specified
