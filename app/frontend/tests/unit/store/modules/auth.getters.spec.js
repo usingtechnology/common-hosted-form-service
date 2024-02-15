@@ -21,7 +21,6 @@ describe('auth getters', () => {
     store.ready = true;
     store.keycloak = {
       createLoginUrl: () => 'loginUrl',
-      createLogoutUrl: () => 'logoutUrl',
       fullName: 'fName',
       subject: zeroUuid,
       token: 'token',
@@ -34,11 +33,7 @@ describe('auth getters', () => {
         idp_userid: zeroGuid,
         preferred_username: 'johndoe',
         realm_access: {},
-        resource_access: {
-          chefs: {
-            roles: roles,
-          },
-        },
+        client_roles: roles,
       },
       userName: 'uName',
     };
@@ -52,12 +47,6 @@ describe('auth getters', () => {
     expect(store.createLoginUrl).toBeTruthy();
     expect(typeof store.createLoginUrl).toBe('function');
     expect(store.createLoginUrl()).toMatch('loginUrl');
-  });
-
-  it('createLogoutUrl should return a string', () => {
-    expect(store.createLogoutUrl).toBeTruthy();
-    expect(typeof store.createLogoutUrl).toBe('function');
-    expect(store.createLogoutUrl()).toMatch('logoutUrl');
   });
 
   it('email should return a string', () => {
@@ -80,7 +69,7 @@ describe('auth getters', () => {
     store.authenticated = false;
 
     expect(store.authenticated).toBeFalsy();
-    expect(store.hasResourceRoles('app', roles)).toBeFalsy();
+    expect(store.hasResourceRoles(roles)).toBeFalsy();
   });
 
   it('hasResourceRoles should return true when checking no roles', () => {
@@ -88,7 +77,7 @@ describe('auth getters', () => {
     roles = [];
 
     expect(store.authenticated).toBeTruthy();
-    expect(store.hasResourceRoles('app', roles)).toBeTruthy();
+    expect(store.hasResourceRoles(roles)).toBeTruthy();
   });
 
   it('hasResourceRoles should return true when role exists', () => {
@@ -96,19 +85,19 @@ describe('auth getters', () => {
     roles = [];
 
     expect(store.authenticated).toBeTruthy();
-    expect(store.hasResourceRoles('app', roles)).toBeTruthy();
+    expect(store.hasResourceRoles(roles)).toBeTruthy();
   });
 
   it('hasResourceRoles should return false when resource does not exist', () => {
     store.authenticated = true;
     store.keycloak.tokenParsed = {
       realm_access: {},
-      resource_access: {},
+      client_roles: [],
     };
     roles = ['non-existent-role'];
 
     expect(store.authenticated).toBeTruthy();
-    expect(store.hasResourceRoles('app', roles)).toBeFalsy();
+    expect(store.hasResourceRoles(roles)).toBeFalsy();
   });
 
   it('identityProvider should return a string', () => {
@@ -120,11 +109,7 @@ describe('auth getters', () => {
     store.authenticated = true;
     roles = [];
     store.keycloak.tokenParsed = {
-      resource_access: {
-        chefs: {
-          roles: roles,
-        },
-      },
+      client_roles: roles,
     };
 
     expect(store.authenticated).toBeTruthy();
@@ -135,38 +120,11 @@ describe('auth getters', () => {
     store.authenticated = true;
     roles = ['admin'];
     store.keycloak.tokenParsed = {
-      resource_access: {
-        chefs: {
-          roles: roles,
-        },
-      },
+      client_roles: roles,
     };
 
     expect(store.authenticated).toBeTruthy();
     expect(store.isAdmin).toBeTruthy();
-  });
-
-  it('isUser should return false if no user role', () => {
-    store.authenticated = true;
-    roles = [];
-
-    expect(store.authenticated).toBeTruthy();
-    expect(store.isUser).toBeFalsy();
-  });
-
-  it('isUser should return true if user role', () => {
-    store.authenticated = true;
-    roles = ['user'];
-    store.keycloak.tokenParsed = {
-      resource_access: {
-        chefs: {
-          roles: roles,
-        },
-      },
-    };
-
-    expect(store.authenticated).toBeTruthy();
-    expect(store.isUser).toBeTruthy();
   });
 
   it('ready should return a boolean', () => {

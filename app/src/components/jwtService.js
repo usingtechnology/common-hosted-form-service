@@ -63,16 +63,27 @@ class JwtService {
   protect(spec) {
     // actual middleware
     return async (req, res, next) => {
-      // get token, check if valid
-      const token = this.getBearerToken(req);
-      if (token) {
-        const payload = await this._verify(token);
-        if (spec && !payload.roles.includes(spec)) {
-          // todo: fix logic to prevent access
-          next();
+      let authorized = false;
+      try {
+        // get token, check if valid
+        const token = this.getBearerToken(req);
+        if (token) {
+          const payload = await this._verify(token);
+          if (spec) {
+            authorized = payload.resource_access?.includes(spec);
+          } else {
+            authorized = true;
+          }
         }
+      } catch (error) {
+        authorized = false;
       }
-      next();
+      if (!authorized) {
+        res.status(403);
+        res.end('Access denied');
+      } else {
+        return next();
+      }
     };
   }
 }

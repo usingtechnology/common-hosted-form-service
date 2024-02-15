@@ -25,11 +25,7 @@ describe('BaseSecure.vue', () => {
     authStore.ready = true;
     authStore.keycloak = {
       tokenParsed: {
-        resource_access: {
-          chefs: {
-            roles: ['user'],
-          },
-        },
+        client_roles: [],
       },
     };
     const wrapper = mount(BaseSecure, {
@@ -41,37 +37,12 @@ describe('BaseSecure.vue', () => {
     expect(wrapper.text()).toEqual('');
   });
 
-  it('renders a message if authenticated, not user', () => {
-    authStore.authenticated = true;
-    authStore.ready = true;
-    authStore.keycloak = {
-      tokenParsed: {
-        resource_access: {
-          chefs: {
-            roles: [],
-          },
-        },
-      },
-    };
-    const wrapper = mount(BaseSecure, {
-      global: {
-        plugins: [router, pinia],
-      },
-    });
-
-    expect(wrapper.text()).toContain('trans.baseSecure.401UnAuthorized');
-  });
-
   it('renders a message if admin required, not admin', () => {
     authStore.authenticated = true;
     authStore.ready = true;
     authStore.keycloak = {
       tokenParsed: {
-        resource_access: {
-          chefs: {
-            roles: ['user'],
-          },
-        },
+        client_roles: [],
       },
     };
     const wrapper = mount(BaseSecure, {
@@ -83,7 +54,7 @@ describe('BaseSecure.vue', () => {
       },
     });
 
-    expect(wrapper.text()).toContain('trans.baseSecure.401UnAuthorizedErrMsg');
+    expect(wrapper.text()).toContain('trans.baseSecure.401UnAuthorized');
   });
 
   it('renders nothing if admin required, user is admin', () => {
@@ -91,11 +62,7 @@ describe('BaseSecure.vue', () => {
     authStore.ready = true;
     authStore.keycloak = {
       tokenParsed: {
-        resource_access: {
-          chefs: {
-            roles: ['user'],
-          },
-        },
+        client_roles: [],
       },
     };
     const wrapper = mount(BaseSecure, {
@@ -166,11 +133,7 @@ describe('BaseSecure.vue', () => {
     authStore.ready = true;
     authStore.keycloak = {
       tokenParsed: {
-        resource_access: {
-          chefs: {
-            roles: ['user'],
-          },
-        },
+        client_roles: [],
       },
     };
     const wrapper = mount(BaseSecure, {

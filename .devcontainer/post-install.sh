@@ -5,6 +5,9 @@ set -ex
 WORKSPACE_DIR=$(pwd)
 CHEFS_LOCAL_DIR=${WORKSPACE_DIR}/.devcontainer/chefs_local
 
+npm install knex -g
+npm install jest -g
+
 # install app libraries, prepare for app development and debugging...
 cd app
 npm install
@@ -31,4 +34,3 @@ npm run migrate
 
 # take down keycloak and postgres, do not need them running all the time.
 docker compose -f ${CHEFS_LOCAL_DIR}/docker-compose.yml down
-

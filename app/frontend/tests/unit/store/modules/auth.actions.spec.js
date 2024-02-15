@@ -11,6 +11,7 @@ describe('auth actions', () => {
   let router = getRouter();
   const replaceSpy = vi.spyOn(router, 'replace');
   const windowReplaceSpy = vi.spyOn(window.location, 'replace');
+  const windowAssignSpy = vi.spyOn(window.location, 'assign');
   setActivePinia(createPinia());
   const mockStore = useAuthStore();
   const formStore = useFormStore();
@@ -21,7 +22,6 @@ describe('auth actions', () => {
       formStore.$reset();
       mockStore.keycloak = {
         createLoginUrl: vi.fn(() => 'about:blank'),
-        createLogoutUrl: vi.fn(() => 'about:blank'),
       };
       replaceSpy.mockReset();
       windowReplaceSpy.mockReset();
@@ -97,23 +97,22 @@ describe('auth actions', () => {
       mockStore.$reset();
       mockStore.keycloak = {
         createLoginUrl: vi.fn(() => 'about:blank'),
-        createLogoutUrl: vi.fn(() => 'about:blank'),
       };
-      windowReplaceSpy.mockReset();
+      windowAssignSpy.mockReset();
     });
 
     it('should do nothing if keycloak is not ready', () => {
       mockStore.ready = false;
       mockStore.logout();
 
-      expect(windowReplaceSpy).toHaveBeenCalledTimes(0);
+      expect(windowAssignSpy).toHaveBeenCalledTimes(0);
     });
 
     it('should trigger navigation action if keycloak is ready', () => {
       mockStore.ready = true;
       mockStore.logout();
 
-      expect(windowReplaceSpy).toHaveBeenCalledTimes(1);
+      expect(windowAssignSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

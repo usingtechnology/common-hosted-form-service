@@ -20,6 +20,7 @@ export const useAuthStore = defineStore('auth', {
     redirectUri: undefined,
     ready: false,
     authenticated: false,
+    logoutUrl: undefined,
   }),
   getters: {
     createLoginUrl: (state) => (options) =>
@@ -34,12 +35,12 @@ export const useAuthStore = defineStore('auth', {
      * @returns (T/F) Whether the state has the required roles
      */
     hasResourceRoles: (state) => {
-      return (resource, roles) => {
+      return (roles) => {
         if (!state.authenticated) return false;
         if (!roles.length) return true; // No roles to check against
 
-        if (state.resourceAccess && state.resourceAccess[resource]) {
-          return hasRoles(state.resourceAccess[resource].roles, roles);
+        if (state.resourceAccess) {
+          return hasRoles(state.resourceAccess, roles);
         }
         return false; // There are roles to check, but nothing in token to check against
       };
@@ -48,13 +49,12 @@ export const useAuthStore = defineStore('auth', {
       state.keycloak.tokenParsed
         ? state.keycloak.tokenParsed.identity_provider
         : null,
-    isAdmin: (state) => state.hasResourceRoles('chefs', ['admin']),
-    isUser: (state) => state.hasResourceRoles('chefs', ['user']),
+    isAdmin: (state) => state.hasResourceRoles(['admin']),
     keycloakSubject: (state) => state.keycloak.subject,
     identityProviderIdentity: (state) => state.keycloak.tokenParsed.idp_userid,
     moduleLoaded: (state) => !!state.keycloak,
     realmAccess: (state) => state.keycloak.tokenParsed.realm_access,
-    resourceAccess: (state) => state.keycloak.tokenParsed.resource_access,
+    resourceAccess: (state) => state.keycloak.tokenParsed.client_roles,
     token: (state) => state.keycloak.token,
     tokenParsed: (state) => state.keycloak.tokenParsed,
     userName: (state) => state.keycloak.tokenParsed.preferred_username,
@@ -116,11 +116,7 @@ export const useAuthStore = defineStore('auth', {
     },
     logout() {
       if (this.ready) {
-        window.location.replace(
-          this.createLogoutUrl({
-            redirectUri: location.origin,
-          })
-        );
+        window.location.assign(this.logoutUrl);
       }
     },
   },

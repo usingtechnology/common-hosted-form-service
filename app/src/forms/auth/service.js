@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require('uuid');
 const { Form, FormSubmissionUserPermissions, PublicFormAccess, SubmissionMetadata, User, UserFormAccess } = require('../common/models');
 const { queryUtils } = require('../common/utils');
 
+const tokenParser = require('./tokenParser');
+
 const FORM_SUBMITTER = require('../common/constants').Permissions.FORM_SUBMITTER;
 
 const service = {
@@ -64,45 +66,7 @@ const service = {
   },
 
   parseToken: (token) => {
-    try {
-      // identity_provider_* will be undefined if user login is to local keycloak (userid/password)
-      const {
-        idir_user_guid: idpUserId,
-        idir_username: identity,
-        identity_provider: idp,
-        preferred_username: username,
-        given_name: firstName,
-        family_name: lastName,
-        idir_user_guid: keycloakId,
-        name: fullName,
-        email,
-      } = token;
-
-      return {
-        idpUserId: idpUserId,
-        keycloakId: keycloakId.replace(/([0-z]{8})([0-z]{4})([0-z]{4})([0-z]{4})([0-z]{12})/, '$1-$2-$3-$4-$5'),
-        username: identity ? identity : username,
-        firstName: firstName,
-        lastName: lastName,
-        fullName: fullName,
-        email: email,
-        idp: idp ? idp : '',
-        public: false,
-      };
-    } catch (e) {
-      // any issues parsing the token, or if token doesn't exist, return a default "public" user
-      return {
-        idpUserId: undefined,
-        keycloakId: undefined,
-        username: 'public',
-        firstName: undefined,
-        lastName: undefined,
-        fullName: 'public',
-        email: undefined,
-        idp: 'public',
-        public: true,
-      };
-    }
+    return tokenParser.getUserInfo(token);
   },
 
   getUserId: async (userInfo) => {

@@ -114,7 +114,8 @@ async function loadConfig() {
       !config.keycloak ||
       !config.keycloak.clientId ||
       !config.keycloak.realm ||
-      !config.keycloak.serverUrl
+      !config.keycloak.serverUrl ||
+      !config.keycloak.logoutUrl
     ) {
       throw new Error('Keycloak is misconfigured');
     }
@@ -162,6 +163,7 @@ function loadKeycloak(config) {
       const ctor = sanitizeConfig(cfg);
 
       const authStore = useAuthStore();
+      authStore.logoutUrl = config.keycloak.logoutUrl;
 
       keycloak = new Keycloak(ctor);
       keycloak.onReady = (authenticated) => {
@@ -181,9 +183,7 @@ function loadKeycloak(config) {
         );
         authStore.logoutFn = () => {
           clearInterval(updateTokenInterval);
-          keycloak.logout(
-            options.logout || { redirectUri: config['logoutRedirectUri'] }
-          );
+          authStore.updateKeycloak(keycloak, false);
         };
       };
       keycloak.onAuthRefreshSuccess = () => {

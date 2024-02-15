@@ -71,7 +71,6 @@
     "jose": "^5.2.1",
     "js-yaml": "^4.1.0",
     "jsonwebtoken": "^9.0.0",
-    "keycloak-connect": "^21.1.1",
     "knex": "^2.4.2",
     "lodash": "^4.17.21",
     "mime-types": "^2.1.35",
