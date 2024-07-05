@@ -3,6 +3,8 @@ const { ref } = require('objection');
 const { v4: uuidv4 } = require('uuid');
 const { EmailTypes } = require('../common/constants');
 const eventService = require('../event/eventService');
+const natsService = require('../../components/natsService');
+
 const moment = require('moment');
 const {
   DocumentTemplate,
@@ -136,6 +138,8 @@ const service = {
       await trx.commit();
       const result = await service.readForm(obj.id);
       result.draft = draft;
+
+      await natsService.onFormCreated(result);
       return result;
     } catch (err) {
       if (trx) await trx.rollback();

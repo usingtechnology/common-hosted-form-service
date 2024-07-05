@@ -58,6 +58,12 @@
       "proxy": "SERVER_ENCRYPTION_PROXY"
     }
   },
+  "nats": {
+    "servers": "NATS_SERVERS",
+    "streamName": "NATS_STREAMNAME",
+    "username": "NATS_USERNAME",
+    "password": "NATS_PASSWORD"
+  },
   "serviceClient": {
     "commonServices": {
       "ches": {

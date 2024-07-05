@@ -9,6 +9,7 @@ const log = require('./src/components/log')(module.filename);
 const httpLogger = require('./src/components/log').httpLogger;
 const middleware = require('./src/forms/common/middleware');
 const v1Router = require('./src/routes/v1');
+const natsConnection = require('./src/components/natsConnection');
 
 const DataConnection = require('./src/db/dataConnection');
 const dataConnection = new DataConnection();
@@ -16,6 +17,7 @@ const apiRouter = express.Router();
 const state = {
   connections: {
     data: false,
+    nats: false,
   },
   ready: false,
   shutdown: false,
@@ -168,19 +170,26 @@ function cleanup() {
  */
 function initializeConnections() {
   // Initialize connections and exit if unsuccessful
-  const tasks = [dataConnection.checkAll()];
+  const tasks = [dataConnection.checkAll(), natsConnection.checkConnection()];
 
   Promise.all(tasks)
     .then((results) => {
       state.connections.data = results[0];
+      state.connections.nats = results[1];
 
       if (state.connections.data)
         log.info('DataConnection Reachable', {
           function: 'initializeConnections',
         });
+      if (state.connections.nats) {
+        log.info('NATS Reachable', {
+          function: 'initializeConnections',
+        });
+      }
     })
     .catch((error) => {
       log.error(`Initialization failed: Database OK = ${state.connections.data}`, { function: 'initializeConnections' });
+      log.error(`Initialization failed: NATS OK = ${state.connections.nats}`, { function: 'initializeConnections' });
       log.error('Connection initialization failure', error.message, {
         function: 'initializeConnections',
       });
@@ -209,10 +218,11 @@ function initializeConnections() {
 function checkConnections() {
   const wasReady = state.ready;
   if (!state.shutdown) {
-    const tasks = [dataConnection.checkConnection()];
+    const tasks = [dataConnection.checkConnection(), natsConnection.checkConnection()];
 
     Promise.all(tasks).then((results) => {
       state.connections.data = results[0];
+      state.connections.nats = results[1];
       state.ready = Object.values(state.connections).every((x) => x);
       if (!wasReady && state.ready)
         log.info('Service ready to accept traffic', {
