@@ -38,8 +38,23 @@ services:
       - ./config:/config
       - n3-data:/data/nats-server/jetstream
 
+  natsbox:
+    container_name: natsbox
+    image: natsio/nats-box:latest
+    tty: true
+    stdin_open: true
+    command: sh
+    networks:
+      - nats
+
 networks:
-  nats: {}
+  nats:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: "192.168.0.0/24"
+          gateway: "192.168.0.1"
 
 volumes:
   n1-data:
