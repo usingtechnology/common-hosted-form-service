@@ -5,6 +5,7 @@ const constants = require('../../common/constants');
 const externalApiService = require('../../form/externalApi/service');
 const formService = require('../../form/service');
 const submissionService = require('../../submission/service');
+const encryptionKeyService = require('../../form/encryptionKey/service');
 
 /**
  * Throws a 400 problem if the parameter is not a valid UUID.
@@ -93,12 +94,19 @@ const validateExternalAPIId = async (req, _res, next, externalAPIId) => {
     _validateUuid(externalAPIId, 'externalAPIId');
 
     const externalApi = await externalApiService.readExternalAPI(externalAPIId);
-    if (!externalApi || externalApi.formId !== req.params.formId) {
+    if (!externalApi) {
       throw new Problem(404, {
-        detail: 'externalAPIId does not exist on this form',
+        detail: 'externalAPIId does not exist',
       });
     }
-
+    // perform this check only if there is a formId (admin routes don't have form id)
+    if (req.params.formId) {
+      if (!externalApi || externalApi.formId !== req.params.formId) {
+        throw new Problem(404, {
+          detail: 'externalAPIId does not exist on this form',
+        });
+      }
+    }
     next();
   } catch (error) {
     next(error);
@@ -266,7 +274,31 @@ const validateRoleCode = async (_req, _res, next, code) => {
 const validateUserId = async (_req, _res, next, userId) => {
   try {
     _validateUuid(userId, 'userId');
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
 
+/**
+ * Validates that the :formEncryptionKeyId route parameter exists and is a UUID. This
+ * validator requires that the :formId route parameter also exists.
+ *
+ * @param {*} req the Express object representing the HTTP request.
+ * @param {*} _res the Express object representing the HTTP response - unused.
+ * @param {*} next the Express chaining function.
+ * @param {*} formEncryptionKeyId the :formEncryptionKeyId value from the route.
+ */
+const validateFormEncryptionKeyId = async (req, _res, next, formEncryptionKeyId) => {
+  try {
+    _validateUuid(formEncryptionKeyId, 'formEncryptionKeyId');
+
+    const rec = await encryptionKeyService.readEncryptionKey(req.params.formId, formEncryptionKeyId);
+    if (!rec) {
+      throw new Problem(404, {
+        detail: 'formEncryptionKeyId does not exist on this form',
+      });
+    }
     next();
   } catch (error) {
     next(error);
@@ -285,4 +317,5 @@ module.exports = {
   validatePermissionCode,
   validateRoleCode,
   validateUserId,
+  validateFormEncryptionKeyId,
 };
