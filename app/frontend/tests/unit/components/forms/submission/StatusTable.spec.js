@@ -7,7 +7,6 @@ import { formService } from '~/services';
 import StatusTable from '~/components/forms/submission/StatusTable.vue';
 import { useFormStore } from '~/store/form';
 import { useNotificationStore } from '~/store/notification';
-import { useAppStore } from '~/store/app';
 
 describe('StatusTable.vue', () => {
   const submissionId = '123-456';
@@ -17,12 +16,10 @@ describe('StatusTable.vue', () => {
   setActivePinia(pinia);
   const formStore = useFormStore(pinia);
   const notificationStore = useNotificationStore(pinia);
-  const appStore = useAppStore(pinia);
 
   beforeEach(() => {
     formStore.$reset();
     notificationStore.$reset();
-    appStore.$reset();
   });
 
   it('renders', async () => {

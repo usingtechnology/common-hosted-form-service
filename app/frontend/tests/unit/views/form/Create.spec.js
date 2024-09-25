@@ -11,7 +11,6 @@ import { useFormStore } from '~/store/form';
 import Create from '~/views/form/Create.vue';
 import { IdentityMode } from '~/utils/constants';
 import { nextTick } from 'vue';
-import { useAppStore } from '~/store/app';
 
 vi.mock('vue-router', () => ({
   ...vi.importActual('vue-router'),
@@ -26,11 +25,9 @@ describe('Create.vue', () => {
   setActivePinia(pinia);
 
   const formStore = useFormStore(pinia);
-  const appStore = useAppStore(pinia);
 
   beforeEach(async () => {
     formStore.$reset();
-    appStore.$reset();
     mockWindowConfirm.mockReset();
   });
 

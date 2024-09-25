@@ -27,7 +27,6 @@ const headers = ref([
 const loading = ref(true);
 const isFileInputEmpty = ref(true);
 const isValidFile = ref(true);
-const isValidSize = ref(true);
 const techdocsLinkTemplateUpload = ref(
   'https://developer.gov.bc.ca/docs/default/component/chefs-techdocs/Capabilities/Functionalities/CDOGS-Template-Upload/'
 );
@@ -39,7 +38,6 @@ const notificationStore = useNotificationStore();
 const { form, isRTL } = storeToRefs(useFormStore());
 
 const validationRules = computed(() => [
-  isValidSize.value || t('trans.documentTemplate.fileSizeError'),
   isValidFile.value || t('trans.documentTemplate.invalidFileMessage'),
 ]);
 
@@ -85,15 +83,6 @@ function handleFileInput(event) {
   if (event && event.length > 0) {
     isFileInputEmpty.value = false;
     uploadedFile = event[0];
-
-    // validate file size
-    if (uploadedFile.size > 25000000) {
-      isValidSize.value = false;
-    } else {
-      isValidSize.value = true;
-    }
-
-    // validate file extension
     const fileExtension = event[0].name.split('.').pop();
     if (validFileExtensions.includes(fileExtension)) {
       isValidFile.value = true;
@@ -103,7 +92,6 @@ function handleFileInput(event) {
   } else {
     isFileInputEmpty.value = true;
     isValidFile.value = true;
-    isValidSize.value = true;
   }
 }
 
@@ -132,21 +120,12 @@ async function handleFileUpload() {
       ...NotificationTypes.SUCCESS,
     });
   } catch (e) {
-    if (e.response.status === 413) {
-      notificationStore.addNotification({
-        text: t('trans.documentTemplate.fileSizeError'),
-        consoleError: t('trans.documentTemplate.fileSizeError', {
-          error: e.message,
-        }),
-      });
-    } else {
-      notificationStore.addNotification({
-        text: t('trans.documentTemplate.uploadError'),
-        consoleError: t('trans.documentTemplate.uploadError', {
-          error: e.message,
-        }),
-      });
-    }
+    notificationStore.addNotification({
+      text: t('trans.documentTemplate.uploadError'),
+      consoleError: t('trans.documentTemplate.uploadError', {
+        error: e.message,
+      }),
+    });
   } finally {
     loading.value = false;
   }
@@ -217,7 +196,6 @@ defineExpose({
   handleFileInput,
   isFileInputEmpty,
   isValidFile,
-  isValidSize,
   uploadedFile,
 });
 </script>
@@ -344,10 +322,7 @@ defineExpose({
     </v-file-input>
     <v-btn
       :disabled="
-        !isValidFile ||
-        !isValidSize ||
-        isFileInputEmpty ||
-        documentTemplates.length >= 1
+        !isValidFile || isFileInputEmpty || documentTemplates.length >= 1
       "
       color="primary"
       :title="$t('trans.documentTemplate.upload')"

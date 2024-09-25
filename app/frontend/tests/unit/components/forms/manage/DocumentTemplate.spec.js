@@ -15,7 +15,6 @@ import { useFormStore } from '~/store/form';
 import { useNotificationStore } from '~/store/notification';
 import getRouter from '~/router';
 import { ref } from 'vue';
-import { useAppStore } from '~/store/app';
 
 const STUBS = {
   VDataTableServer: {
@@ -34,7 +33,7 @@ const STUBS = {
 };
 
 describe('DocumentTemplate.vue', () => {
-  let router, pinia, formStore, notificationStore, appStore;
+  let router, pinia, formStore, notificationStore;
   let createObjectURLSpy = vi.spyOn(window.URL, 'createObjectURL');
 
   beforeEach(() => {
@@ -48,11 +47,9 @@ describe('DocumentTemplate.vue', () => {
 
     formStore = useFormStore(pinia);
     notificationStore = useNotificationStore(pinia);
-    appStore = useAppStore(pinia);
 
     formStore.$reset();
     notificationStore.$reset();
-    appStore.$reset();
 
     // Explicitly mock/spy on global functions
     createObjectURLSpy.mockImplementation(() => '#');
@@ -341,9 +338,7 @@ describe('DocumentTemplate.vue', () => {
       'documentTemplateCreate'
     );
     documentTemplateCreateSpy.mockImplementation(() => {
-      const error = new Error('Error');
-      error.response = { status: 500 };
-      throw error;
+      throw new Error('Error');
     });
     const wrapper = mount(DocumentTemplate, {
       global: {

@@ -99,8 +99,7 @@ function enableSettingsEdit() {
 
 async function updateSettings() {
   try {
-    const { valid } = await settingsForm.value.validate();
-    if (valid) {
+    if (settingsForm.value.validate()) {
       await formStore.updateForm();
       formSettingsDisabled.value = true;
       notificationStore.addNotification({

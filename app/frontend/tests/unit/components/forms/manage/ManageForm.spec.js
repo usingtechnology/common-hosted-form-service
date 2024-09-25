@@ -10,7 +10,6 @@ import getRouter from '~/router';
 import { useFormStore } from '~/store/form';
 import { useNotificationStore } from '~/store/notification';
 import { FormPermissions } from '~/utils/constants';
-import { useAppStore } from '~/store/app';
 
 const STUBS = {
   VDataTable: {
@@ -43,14 +42,12 @@ describe('ManageForm.vue', () => {
   setActivePinia(pinia);
   const formStore = useFormStore(pinia);
   const notificationStore = useNotificationStore(pinia);
-  const appStore = useAppStore(pinia);
   const readFormSpy = vi.spyOn(formStore, 'readFormSubscriptionData');
   const addNotificationSpy = vi.spyOn(notificationStore, 'addNotification');
 
   beforeEach(() => {
     formStore.$reset();
     notificationStore.$reset();
-    appStore.$reset();
     readFormSpy.mockReset();
     addNotificationSpy.mockReset();
     readFormSpy.mockImplementationOnce(async () => {});

@@ -652,7 +652,6 @@ export default {
         apiIntegration: this.form.apiIntegration,
         useCase: this.form.useCase,
         labels: this.form.labels,
-        eventStreamConfig: this.form.eventStreamConfig,
       });
       // update user labels with any new added labels
       if (

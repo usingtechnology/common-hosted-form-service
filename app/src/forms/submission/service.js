@@ -9,7 +9,6 @@ const eventService = require('../event/eventService');
 const fileService = require('../file/service');
 const formService = require('../form/service');
 const permissionService = require('../permission/service');
-const { eventStreamService, SUBMISSION_EVENT_TYPES } = require('../../components/eventStreamService');
 
 const service = {
   // -------------------------------------------------------------------------------------------------------
@@ -96,10 +95,9 @@ const service = {
     let trx;
     try {
       trx = etrx ? etrx : await FormSubmission.startTransaction();
-      const restoring = data['deleted'] !== undefined && typeof data.deleted == 'boolean';
 
       // If we're restoring a submission
-      if (restoring) {
+      if (data['deleted'] !== undefined && typeof data.deleted == 'boolean') {
         await FormSubmission.query(trx).patchAndFetchById(formSubmissionId, { deleted: data.deleted, updatedBy: currentUser.usernameIdp });
       } else {
         const statuses = await FormSubmissionStatus.query().modify('filterSubmissionId', formSubmissionId).modify('orderDescending');
@@ -142,9 +140,7 @@ const service = {
 
       if (!etrx) await trx.commit();
 
-      const result = await service.read(formSubmissionId);
-      await eventStreamService.onSubmit(SUBMISSION_EVENT_TYPES.UPDATED, result.submission, data.draft);
-      return result;
+      return service.read(formSubmissionId);
     } catch (err) {
       if (!etrx && trx) await trx.rollback();
       throw err;
@@ -188,9 +184,7 @@ const service = {
         updatedBy: currentUser.usernameIdp,
       });
       await trx.commit();
-      const result = await service.read(formSubmissionId);
-      await eventStreamService.onSubmit(SUBMISSION_EVENT_TYPES.DELETED, result.submission, false);
-      return result;
+      return await service.read(formSubmissionId);
     } catch (err) {
       if (trx) await trx.rollback();
       throw err;

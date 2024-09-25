@@ -8,7 +8,6 @@ import MySubmissionsActions from '~/components/forms/submission/MySubmissionsAct
 import getRouter from '~/router';
 import { useFormStore } from '~/store/form';
 import { FormPermissions } from '~/utils/constants';
-import { useAppStore } from '~/store/app';
 
 const FORM_ID = '123';
 const STUBS = {
@@ -25,8 +24,6 @@ const STUBS = {
 describe('MySubmissionsActions', () => {
   const pinia = createTestingPinia();
   const formStore = useFormStore(pinia);
-  const appStore = useAppStore(pinia);
-
   setActivePinia(pinia);
   const router = createRouter({
     history: createWebHistory(),
@@ -35,7 +32,6 @@ describe('MySubmissionsActions', () => {
 
   beforeEach(() => {
     formStore.$reset();
-    appStore.$reset();
   });
 
   it('renders', () => {

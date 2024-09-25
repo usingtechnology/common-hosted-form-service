@@ -1,31 +1,40 @@
-<script setup>
+<script>
+import { mapState } from 'pinia';
 import { useI18n } from 'vue-i18n';
-import { ref, watch } from 'vue';
 
-const { locale } = useI18n({ useScope: 'global' });
+import { useFormStore } from '~/store/form';
 
-const properties = defineProps({
-  showDialog: { type: Boolean, required: true },
-  component: { type: Object, default: () => {} },
-  fcProactiveHelpImageUrl: undefined,
-});
+export default {
+  props: {
+    showDialog: { type: Boolean, required: true },
+    component: { type: Object, default: () => {} },
+    fcProactiveHelpImageUrl: undefined,
+  },
+  emits: ['close-dialog'],
+  setup() {
+    const { locale } = useI18n({ useScope: 'global' });
 
-const emit = defineEmits(['close-dialog']);
-
-const dialog = ref(properties.showDialog);
-
-watch(
-  () => properties.showDialog,
-  (value) => {
-    dialog.value = value;
-  }
-);
-
-function onCloseDialog() {
-  emit('close-dialog');
-}
-
-defineExpose({ onCloseDialog });
+    return { locale };
+  },
+  data() {
+    return {
+      dialog: this.showDialog,
+    };
+  },
+  computed: {
+    ...mapState(useFormStore, ['isRTL']),
+  },
+  watch: {
+    showDialog(value) {
+      this.dialog = value;
+    },
+  },
+  methods: {
+    onCloseDialog() {
+      this.$emit('close-dialog');
+    },
+  },
+};
 </script>
 
 <template>

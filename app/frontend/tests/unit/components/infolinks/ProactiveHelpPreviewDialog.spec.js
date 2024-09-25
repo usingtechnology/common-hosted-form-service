@@ -1,16 +1,16 @@
-import { mount, shallowMount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import { createTestingPinia } from '@pinia/testing';
 import { setActivePinia } from 'pinia';
 import { createRouter, createWebHistory } from 'vue-router';
-import { expect } from 'vitest';
+import { beforeEach, expect, vi } from 'vitest';
 
+import { rbacService } from '~/services';
 import getRouter from '~/router';
 import ProactiveHelpPreviewDialog from '~/components/infolinks/ProactiveHelpPreviewDialog.vue';
-
 import { useFormStore } from '~/store/form';
-import { useAppStore } from '~/store/app';
 
 describe('ProactiveHelpPreviewDialog.vue', () => {
+  const getSubmissionUsersSpy = vi.spyOn(rbacService, 'getSubmissionUsers');
   const pinia = createTestingPinia();
   const router = createRouter({
     history: createWebHistory(),
@@ -18,18 +18,20 @@ describe('ProactiveHelpPreviewDialog.vue', () => {
   });
 
   setActivePinia(pinia);
-
   const formStore = useFormStore(pinia);
-  const appStore = useAppStore(pinia);
 
   beforeEach(() => {
+    getSubmissionUsersSpy.mockReset();
     formStore.$reset();
-    appStore.$reset();
   });
 
-  afterAll(() => {});
+  afterAll(() => {
+    getSubmissionUsersSpy.mockRestore();
+  });
 
   it('renders', () => {
+    formStore.form.name = 'myForm';
+    getSubmissionUsersSpy.mockImplementation(() => ({ data: [] }));
     const wrapper = mount(ProactiveHelpPreviewDialog, {
       props: {
         component: {
@@ -52,31 +54,5 @@ describe('ProactiveHelpPreviewDialog.vue', () => {
     });
 
     expect(wrapper.text()).toContain('content').toContain('dump description');
-  });
-
-  it('onCloseDialog should emit close-dialog', () => {
-    const wrapper = shallowMount(ProactiveHelpPreviewDialog, {
-      props: {
-        component: {
-          componentName: 'content',
-          description: 'dump description',
-          imageUrl: 'https://dumpurl.com',
-          moreHelpInfoLink: 'https://dumpurl.com',
-        },
-        showDialog: true,
-      },
-      global: {
-        plugins: [router, pinia],
-        stubs: {
-          VDialog: {
-            name: 'VDialog',
-            template: '<div class="v-dialog-stub"><slot /></div>',
-          },
-        },
-      },
-    });
-
-    wrapper.vm.onCloseDialog();
-    expect(wrapper.emitted()).toHaveProperty('close-dialog');
   });
 });

@@ -10,7 +10,6 @@ import { useFormStore } from '~/store/form';
 import { useNotificationStore } from '~/store/notification';
 import { formService } from '~/services';
 import { rbacService } from '~/services';
-import { useAppStore } from '~/store/app';
 
 const FORM_ID = 'formId';
 const SUBMISSION_ID = 'submissionId';
@@ -54,7 +53,6 @@ describe('StatusPanel', () => {
   const authStore = useAuthStore(pinia);
   const formStore = useFormStore(pinia);
   const notificationStore = useNotificationStore(pinia);
-  const appStore = useAppStore(pinia);
 
   const addNotificationSpy = vi
     .spyOn(notificationStore, 'addNotification')
@@ -66,7 +64,6 @@ describe('StatusPanel', () => {
     authStore.$reset();
     formStore.$reset();
     notificationStore.$reset();
-    appStore.$reset();
 
     addNotificationSpy.mockReset();
     getFormUsersSpy.mockReset();

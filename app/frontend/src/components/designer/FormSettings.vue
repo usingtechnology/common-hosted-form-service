@@ -5,9 +5,6 @@ import FormGeneralSettings from '~/components/designer/settings/FormGeneralSetti
 import FormFunctionalitySettings from '~/components/designer/settings/FormFunctionalitySettings.vue';
 import FormScheduleSettings from '~/components/designer/settings/FormScheduleSettings.vue';
 import FormSubmissionSettings from '~/components/designer/settings/FormSubmissionSettings.vue';
-import FormEventStreamSettings from '~/components/designer/settings/FormEventStreamSettings.vue';
-
-import { useAppStore } from '~/store/app';
 import { useFormStore } from '~/store/form';
 
 export default {
@@ -17,7 +14,6 @@ export default {
     FormFunctionalitySettings,
     FormScheduleSettings,
     FormSubmissionSettings,
-    FormEventStreamSettings,
   },
   props: {
     disabled: {
@@ -28,10 +24,6 @@ export default {
   computed: {
     ...mapWritableState(useFormStore, ['form']),
     ...mapState(useFormStore, ['isFormPublished', 'isRTL']),
-    eventStreamEnabled() {
-      const appStore = useAppStore();
-      return appStore.config?.features?.eventStreamService;
-    },
   },
 };
 </script>
@@ -53,9 +45,6 @@ export default {
       </v-col>
       <v-col v-if="form.schedule.enabled && isFormPublished" cols="12" md="6">
         <FormScheduleSettings />
-      </v-col>
-      <v-col v-if="eventStreamEnabled">
-        <FormEventStreamSettings :disabled="disabled" />
       </v-col>
     </v-row>
   </v-container>

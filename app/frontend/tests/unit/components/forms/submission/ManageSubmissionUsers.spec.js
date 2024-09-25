@@ -11,7 +11,6 @@ import { useFormStore } from '~/store/form';
 import { useNotificationStore } from '~/store/notification';
 import { useIdpStore } from '~/store/identityProviders';
 import { FormPermissions } from '~/utils/constants';
-import { useAppStore } from '~/store/app';
 
 const providers = require('../../../fixtures/identityProviders.json');
 
@@ -35,8 +34,6 @@ describe('ManageSubmissionUsers.vue', () => {
     const pinia = createTestingPinia({ stubActions: false });
     setActivePinia(pinia);
     const formStore = useFormStore(pinia);
-    useAppStore(pinia);
-
     formStore.form.name = 'myForm';
     getSubmissionUsersSpy.mockImplementation(() => ({ data: [] }));
     const wrapper = mount(ManageSubmissionUsers, {

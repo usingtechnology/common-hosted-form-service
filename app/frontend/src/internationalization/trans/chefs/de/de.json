@@ -84,8 +84,7 @@
     "deleteSuccess": "Vorlage erfolgreich gelöscht.",
     "deleteError": "Beim Löschen der Vorlage ist ein Fehler aufgetreten.",
     "fetchError": "Beim Abrufen der Vorlage ist ein Fehler aufgetreten.",
-    "info": "Laden Sie eine Vorlage hoch, um den Gemeinsamen Dokumenterstellungsdienst (CDOGS) zu verwenden",
-    "fileSizeError": "Die Dateigröße muss weniger als 25 MB betragen."
+    "info": "Laden Sie eine Vorlage hoch, um den Gemeinsamen Dokumenterstellungsdienst (CDOGS) zu verwenden"
   },
   "formSettings": {
     "pressToAddMultiEmail": "Drücken Sie <kbd>die Eingabetaste</kbd> oder <kbd>die Leertaste</kbd> oder <kbd>,</kbd> um mehrere E-Mail-Adressen hinzuzufügen",

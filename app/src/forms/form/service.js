@@ -25,8 +25,6 @@ const {
 } = require('../common/models');
 const { falsey, queryUtils, checkIsFormExpired, validateScheduleObject, typeUtils } = require('../common/utils');
 const { Permissions, Roles, Statuses } = require('../common/constants');
-const { eventStreamService, SUBMISSION_EVENT_TYPES } = require('../../components/eventStreamService');
-const eventStreamConfigService = require('./eventStreamConfig/service');
 const Rolenames = [Roles.OWNER, Roles.TEAM_MANAGER, Roles.FORM_DESIGNER, Roles.SUBMISSION_REVIEWER, Roles.FORM_SUBMITTER, Roles.SUBMISSION_APPROVER];
 
 const service = {
@@ -135,8 +133,6 @@ const service = {
       }));
       await FormStatusCode.query(trx).insert(defaultStatuses);
 
-      await eventStreamConfigService.upsert(obj.id, data.eventStreamConfig, currentUser, trx);
-
       await trx.commit();
       const result = await service.readForm(obj.id);
       result.draft = draft;
@@ -193,10 +189,9 @@ const service = {
       }));
       if (fIdps && fIdps.length) await FormIdentityProvider.query(trx).insert(fIdps);
 
-      await eventStreamConfigService.upsert(obj.id, data.eventStreamConfig, currentUser, trx);
-
       await trx.commit();
-      return await service.readForm(obj.id);
+      const result = await service.readForm(obj.id);
+      return result;
     } catch (err) {
       if (trx) await trx.rollback();
       throw err;
@@ -485,9 +480,7 @@ const service = {
       eventService.publishFormEvent(formId, formVersionId, publish);
 
       // return the published form/version...
-      const result = await service.readPublishedForm(formId);
-      await eventStreamService.onPublish(formId, formVersionId, publish);
-      return result;
+      return await service.readPublishedForm(formId);
     } catch (err) {
       if (trx) await trx.rollback();
       throw err;
@@ -599,7 +592,7 @@ const service = {
 
       await trx.commit();
       const result = await service.readSubmission(obj.id);
-      eventStreamService.onSubmit(SUBMISSION_EVENT_TYPES.CREATED, result, data.draft);
+
       return result;
     } catch (err) {
       if (trx) await trx.rollback();
@@ -770,8 +763,6 @@ const service = {
       await trx.commit();
 
       eventService.publishFormEvent(formId, version.id, version.published);
-
-      await eventStreamService.onPublish(formId, version.id, version.published);
 
       // return the published version...
       return await service.readVersion(version.id);

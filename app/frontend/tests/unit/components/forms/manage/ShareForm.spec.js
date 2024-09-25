@@ -7,7 +7,6 @@ import { useRouter } from 'vue-router';
 
 import ShareForm from '~/components/forms/manage/ShareForm.vue';
 import { useFormStore } from '~/store/form';
-import { useAppStore } from '~/store/app';
 
 const STUBS = {
   BaseCopyToClipboard: {
@@ -42,11 +41,9 @@ describe('ShareForm.vue', () => {
   const pinia = createTestingPinia();
   setActivePinia(pinia);
   const formStore = useFormStore(pinia);
-  const appStore = useAppStore(pinia);
 
   beforeEach(() => {
     formStore.$reset();
-    appStore.$reset();
   });
 
   it('formLink resolves a URL and returns the href', async () => {
