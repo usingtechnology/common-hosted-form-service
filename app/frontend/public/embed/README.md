@@ -51,6 +51,7 @@ These files are the source for future releases. The frontend build does not ship
 | ------- | ------------------------------------------------------------------------------------------------------------ |
 | `v1`    | Frozen legacy files at `/app/embed/` and `/app/webcomponents/v1/`. Unchanged.                                |
 | `1.0.0` | v1 behaviour (API key or gateway token) with the fixes below. Loads only its own files, each checked by SRI. |
+| `1.1.0` | 1.0.0 plus embedding a Public form without an API key or token, on websites the form allows.                 |
 
 #### Embedding a release
 
@@ -78,6 +79,14 @@ Changes in 1.0.0 from v1:
 - The embed script also works under its `.min.js` name.
 - No CDN fallbacks, and no `HEAD` requests to find an asset's type.
 
+Changes in 1.1.0 from 1.0.0:
+
+- Anonymous embeds of Public forms; see [Public forms without an API key](#public-forms-without-an-api-key).
+- `formio:submitDone` carries `{ submission, showConfirmationId, hideContent }` whenever CHEFS saves a submission, keyed or anonymous. `submission` has the saved `id`, `confirmationId` and `createdAt`; the two flags follow the form's "show confirmation ID" and "hide submission contents" settings, so the host can show its own confirmation.
+- An embed with no API key or token that points the `schema` or `submit` endpoint at its own server (for example a proxy that adds the key) is not anonymous and works as in 1.0.0.
+- After a submit, a form whose settings hide submission contents on success is cleared instead of reloaded read-only, with an API key or token as well as anonymously.
+- `refreshAuthToken()` does nothing without an `auth-token`, instead of sending an empty refresh that fails.
+
 ### Authentication
 
 #### Obtaining a gateway token (server-side only)
@@ -100,7 +109,22 @@ The webcomponent uses the `X-Chefs-Gateway-Token` header for authentication when
 
 #### Public forms without an API key
 
-A form that uses the Public login option can be embedded without an API key or gateway token, on websites its owner lists under **Manage Form > Web Component > Allowed origins**. The v1 component calls the keyed `form-viewer` endpoints; support for these endpoints in the component comes with release 1.1.0.
+A form that uses the Public login option can be embedded without an API key or gateway token, on websites its owner lists under **Manage Form > Web Component > Allowed origins**. From release 1.1.0 the component does this when none of `api-key`, `auth-token`, `onBuildAuthHeader` or a `schema`/`submit` endpoint override is set:
+
+```html
+<script
+  src="https://<chefs-host>/app/embed/1.1.0/embed/chefs-form-viewer-embed.min.js?form-id=<formId>"
+  integrity="sha384-pssG3NFBzqNOURpscGvlOhmJiGZH0Z+jkC4pHcNmiXH1IVWgTRv9MFDNHTNpw0sw"
+  crossorigin="anonymous"
+></script>
+```
+
+- **Requests**: the schema and submit go to the endpoints below with no CHEFS credentials and none of the host's `onPassthroughHeaders` headers. (The `headers` attribute only feeds the form's JavaScript and is never sent.)
+- **After a submit**: CHEFS does not return anonymous submissions, so the component shows the data it sent, read-only. If the form's settings hide submission contents on success, it clears the form instead. Listen for `formio:submitDone` to show a confirmation (see its `showConfirmationId` and `hideContent` flags). `auto-reload-on-submit=false` leaves the form as it is.
+- **Not available**: printing, uploading or downloading files and loading a `submission-id` need an API key or token; the component emits `formio:error` instead. A Public form never allows drafts.
+- **Set-up errors**: when CHEFS refuses an anonymous request (`401`, `403` or `404`), the `formio:error` message also says that the form must use the Public login option and list the website as an allowed origin.
+
+Releases v1 and 1.0.0 call the keyed `form-viewer` endpoints, so without a key they fail with `401`.
 
 | Endpoint                                                  | Purpose                                                 |
 | --------------------------------------------------------- | ------------------------------------------------------- |

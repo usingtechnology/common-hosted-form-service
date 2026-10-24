@@ -180,6 +180,8 @@
  *   - The auth-token should be fetched by your backend server via POST /app/gateway/v1/auth/token/forms/<form-id> with required Authorization: Basic base64(formId:apiKey).
  *   - The backend should return the short-lived, refreshable token to the frontend for embedding and authenticating form access.
  * - `api-key`: API access key (fallback, only if auth-token is not available)
+ * - Omit both for a Public form that lists this website in its allowed origins; the component
+ *   then loads and submits it anonymously.
 
  * **Optional:**
  * - `submission-id`: Load specific submission (for editing/viewing)

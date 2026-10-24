@@ -31,6 +31,10 @@
   };
   const FONT_AWESOME_FONTS = 'assets/font-awesome/fonts';
 
+  // Added to anonymous request errors, which usually mean the form or website is not set up for it
+  const ANONYMOUS_HINT =
+    'Embedding without an API key or auth token needs a form that uses the Public login option and lists this website in its allowed origins.';
+
   /**
    * Creates a minimal redaction-aware logger for the component.
    *
@@ -532,6 +536,12 @@
    *   - Enables automatic token refresh based on expiry time. Refreshed 60 seconds before expiry.
    * - api-key (string): API access key (fallback, only if auth-token is not available).
    *   - Used with form-id for same-origin Basic auth when auth-token is not available.
+   * - Without auth-token, api-key, onBuildAuthHeader or a schema/submit endpoint override the component
+   *   is anonymous: it loads and submits a Public form through /webcomponents/v1/public/, which only
+   *   answers websites the form allows. Anonymous requests carry no CHEFS credentials and none of the
+   *   onPassthroughHeaders headers. Anonymous embeds cannot print, upload or download files or load a
+   *   submission-id, and show the submitted data read-only after a submit (or clear the form when its
+   *   settings hide submission contents). Public forms never allow drafts.
    * - submission-id (string): optional. Prefills from an existing submission.
    * - read-only (boolean): when present/"true"/empty/1 enables read-only.
    * - language (string): i18n language code (default: "en").
@@ -569,6 +579,10 @@
    *
    * Core events (CustomEvent)
    * - formio:ready, formio:render, formio:change, formio:submit, formio:submitDone, formio:error
+   * - formio:submitDone detail: { submission, showConfirmationId, hideContent }. submission has the
+   *   saved id, confirmationId and createdAt. showConfirmationId and hideContent follow the form's
+   *   "show confirmation id" and "hide submission contents" settings so the host can show its own
+   *   confirmation.
    * - formio:authTokenRefreshed: fired when auth token is refreshed (includes new and old tokens)
    * - formio:userTokenRefreshed: fired when user token is updated via refreshUserToken()
    * - formio:userTokenExpiring: fired when user token is about to expire (configurable buffer, default 60s)
@@ -809,7 +823,8 @@
      *   The Authorization header can be updated programmatically via refreshUserToken() for user token management.
      * - auto-reload-on-submit: boolean; when true (default), automatically reloads the form as read-only
      *   after successful submission, showing the submitted data. This provides a CHEFS-like experience
-     *   out-of-the-box. Set to "false" to disable this behavior.
+     *   out-of-the-box. A form whose settings hide submission contents on success is cleared instead.
+     *   Set to "false" to disable this behavior.
      * - host-data: string; JSON string containing arbitrary host application data that will be available
      *   in Form.io's evalContext as `host`. Use this to pass datasets, lookup tables, configuration objects,
      *   or any structured data that form components need to access via custom JavaScript (calculated values,
@@ -1050,6 +1065,7 @@
      *
      * The new token is immediately available to all Form.io requests through the
      * dynamic auth plugin without requiring any plugin re-registration.
+     * Does nothing without an auth token (an anonymous or API key embed).
      *
      * @returns {Promise<void>} Resolves when refresh completes
      *
@@ -1068,6 +1084,11 @@
      * });
      */
     async refreshAuthToken() {
+      // Nothing to refresh: an empty refresh would only fail
+      if (!this.authToken) {
+        this._log.info('authToken:refresh:skip:noToken');
+        return;
+      }
       const base = this.getBaseUrl();
       const refreshUrl = `${base}/gateway/v1/auth/refresh`;
       try {
@@ -1352,6 +1373,10 @@
      * await viewer.print(); // auto-detects submission vs draft
      */
     async print(options = {}) {
+      if (this._isAnonymous()) {
+        this._rejectAnonymous('Printing');
+        return;
+      }
       if (!this._acquireBusyLock('print')) return;
       try {
         const isSubmissionPrint = !!this.submissionId;
@@ -1618,16 +1643,77 @@
       this._lockHeldBySubmit = false;
     }
 
+    /**
+     * True without CHEFS credentials: requests then use the anonymous Public form routes.
+     * A host that points schema or submit at its own endpoint (for example a proxy that
+     * adds the key) is not anonymous, so it keeps the keyed behaviour.
+     */
+    _isAnonymous() {
+      return (
+        !this.authToken &&
+        !this.apiKey &&
+        typeof this.onBuildAuthHeader !== 'function' &&
+        !this.endpoints?.schema &&
+        !this.endpoints?.submit
+      );
+    }
+
+    /**
+     * Reports a feature that needs CHEFS credentials when the component has none
+     * @param {string} action - What was attempted, e.g. 'Printing'
+     * @returns {string} The error message emitted with formio:error
+     */
+    _rejectAnonymous(action) {
+      const error = `${action} needs an API key or auth token.`;
+      this._log.warn('anonymous:unsupported', { action });
+      this._emit('formio:error', { error });
+      return error;
+    }
+
+    /** Headers for a schema or submit request; anonymous requests carry no credentials or host headers */
+    _chefsHeaders(url, headers, anonymous) {
+      if (anonymous) return headers;
+      return this._mergeHeadersWithAuth(
+        headers,
+        this._buildAuthHeader(url),
+        url
+      );
+    }
+
+    /**
+     * Error message for a failed schema or submit request
+     * @param {boolean} anonymous - Whether the request was sent anonymously
+     */
+    async _requestError(res, fallback, anonymous) {
+      const msg = await this._parseError(res, fallback);
+      if (anonymous && [401, 403, 404].includes(res.status)) {
+        const sentence = /[.!?]$/.test(msg) ? msg : `${msg}.`;
+        return `${sentence} ${ANONYMOUS_HINT}`;
+      }
+      return msg;
+    }
+
+    /** formio:submitDone detail, with the form's confirmation settings for the host to follow */
+    _submitDoneDetail(submission) {
+      return {
+        submission,
+        showConfirmationId: this.form?.showSubmissionConfirmation === true,
+        hideContent: this.form?.hideSubmissionContentOnSuccess === true,
+      };
+    }
+
     /** Default backend endpoints; embedders can override via .endpoints */
     _defaultEndpoints() {
       const base = this.getBaseUrl();
       const fid = this.formId || ':formId';
       const sid = this.submissionId || ':submissionId';
+      // Without credentials, a Public form loads and submits through the anonymous routes
+      const formRoutes = this._isAnonymous() ? 'public' : 'form-viewer';
       return {
         ...this._defaultAssetUrls(base),
 
-        schema: `${base}/webcomponents/v1/form-viewer/${fid}/schema`,
-        submit: `${base}/webcomponents/v1/form-viewer/${fid}/submit`,
+        schema: `${base}/webcomponents/v1/${formRoutes}/${fid}/schema`,
+        submit: `${base}/webcomponents/v1/${formRoutes}/${fid}/submit`,
         readSubmission: `${base}/webcomponents/v1/form-viewer/${fid}/submission/${sid}`,
         printSubmission: `${base}/webcomponents/v1/print/${fid}/submission/${sid}/print`,
         printDraft: `${base}/webcomponents/v1/print/${fid}/print`,
@@ -2041,7 +2127,7 @@
         this._emit('formio:submit', { submission: payload })
       );
       this.formioInstance.on('submitDone', (result) =>
-        this._emit('formio:submitDone', { submission: result })
+        this._emit('formio:submitDone', this._submitDoneDetail(result))
       );
       this.formioInstance.on('error', (err) =>
         this._emit('formio:error', { error: err?.message || String(err) })
@@ -2099,7 +2185,9 @@
     _ensurePrintButtonEnabled(source = 'unknown') {
       const entry = { source, key: this.printButtonKey };
 
-      if (!this.formioInstance || !this.printButtonKey) return;
+      // Printing needs credentials, so an anonymous form leaves the button as Form.io sets it
+      if (!this.formioInstance || !this.printButtonKey || this._isAnonymous())
+        return;
 
       const component = this._findComponentByKey(this.printButtonKey);
       if (!component) {
@@ -2161,12 +2249,16 @@
       if (!this._emit('formio:beforeLoadSchema', { url }, { cancelable: true }))
         return;
 
-      const authHeaders = this._buildAuthHeader(url);
+      const anonymous = this._isAnonymous();
       const res = await fetch(url, {
-        headers: this._mergeHeadersWithAuth({}, authHeaders, url),
+        headers: this._chefsHeaders(url, {}, anonymous),
       });
       if (!res.ok) {
-        const msg = await this._parseError(res, 'Failed to load form schema');
+        const msg = await this._requestError(
+          res,
+          'Failed to load form schema',
+          anonymous
+        );
         this._emit('formio:error', { error: msg });
         this._log.error('schema:error', { msg });
         throw new Error(msg);
@@ -2637,21 +2729,27 @@
         return;
       }
 
+      // Decided once, so a host changing credentials mid-submit cannot mix the two modes
+      const anonymous = this._isAnonymous();
       const url = this._resolveUrl('submit');
       // debug: submit post
       this._emit('formio:submit', { submission });
-      const authHeaders = this._buildAuthHeader(url);
+      const body = JSON.stringify({ submission, draft: !isSubmit });
       const res = await fetch(url, {
         method: 'POST',
-        headers: this._mergeHeadersWithAuth(
+        headers: this._chefsHeaders(
+          url,
           { 'Content-Type': 'application/json' },
-          authHeaders,
-          url
+          anonymous
         ),
-        body: JSON.stringify({ submission, draft: !isSubmit }),
+        body,
       });
       if (!res.ok) {
-        const msg = await this._parseError(res, 'Submission failed');
+        const msg = await this._requestError(
+          res,
+          'Submission failed',
+          anonymous
+        );
         this._log.error('submit:error', { msg });
         this._emit('formio:error', { error: msg });
         return;
@@ -2659,11 +2757,19 @@
       const result = await res.json().catch(() => ({}));
       const submitParsed = this.parsers.submitResult(result);
       this._log.info('submit:ok');
-      this._emit('formio:submitDone', { submission: submitParsed.submission });
+      this._emit(
+        'formio:submitDone',
+        this._submitDoneDetail(submitParsed.submission)
+      );
 
-      // Auto-reload as read-only after successful submission (if enabled and not a draft)
+      // Auto-reload as read-only after successful submission (if enabled and not a draft).
+      // The data shown is what was sent, not the live form, which may have changed since.
       if (this.autoReloadOnSubmit && isSubmit && submitParsed.submission?.id) {
-        await this._handleAutoReload(submitParsed.submission);
+        await this._handleAutoReload(
+          submitParsed.submission,
+          JSON.parse(body).submission?.data,
+          anonymous
+        );
       }
     }
 
@@ -2733,10 +2839,13 @@
      * Handles auto-reload behavior after successful submission (not draft).
      *
      * Emits cancelable events to allow customization of the auto-reload behavior.
-     * By default, reloads the form as read-only with the submission data.
+     * By default, reloads the form as read-only with the submission data. When the
+     * form's settings hide submission contents on success, clears the form instead.
      * Only runs for actual submissions, not draft saves.
      *
      * @param {Object} submission - The submission object from the successful submission
+     * @param {Object} [data] - The data that was submitted; shown read-only after an anonymous submit
+     * @param {boolean} [anonymous] - Whether the submission was sent anonymously
      * @returns {Promise<void>} Resolves when auto-reload completes or is cancelled
      *
      * @fires ChefsFormViewer#formio:beforeAutoReload - Before auto-reload starts (cancelable)
@@ -2744,7 +2853,11 @@
      * @fires ChefsFormViewer#formio:autoReloadComplete - When auto-reload completes
      * @fires ChefsFormViewer#formio:error - If auto-reload fails
      */
-    async _handleAutoReload(submission) {
+    async _handleAutoReload(
+      submission,
+      data = {},
+      anonymous = this._isAnonymous()
+    ) {
       this._log.info('autoReload:starting', {
         submissionId: submission.id,
       });
@@ -2779,9 +2892,17 @@
         // Wait a moment then reload as read-only (like the demo pattern)
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        this.submissionId = submission.id;
-        this.readOnly = true;
-        await this._reloadAfterSubmit();
+        if (this.form?.hideSubmissionContentOnSuccess === true) {
+          // The form's settings hide submission contents on success
+          await this._clearForm();
+        } else if (anonymous) {
+          // Anonymous submissions cannot be read back, so show what was sent
+          await this._displayAsReadOnly(data);
+        } else {
+          this.submissionId = submission.id;
+          this.readOnly = true;
+          await this._reloadAfterSubmit();
+        }
 
         this._log.info('autoReload:completed');
         this._emit('formio:autoReloadComplete', {
@@ -2794,6 +2915,15 @@
           error: `Auto-reload failed: ${error.message}`,
         });
       }
+    }
+
+    /**
+     * Removes the form after a submit whose contents the form's settings hide.
+     * @private
+     */
+    async _clearForm() {
+      await this.destroy();
+      this._root.querySelector('#formio-container')?.replaceChildren();
     }
 
     /** Emit a cancellable event and collect async waits via detail.waitUntil */
@@ -3190,6 +3320,10 @@
 
         // File operation functions with cancelable events
         uploadFile: async (formData, config = {}) => {
+          // Anonymous submissions cannot include files, and file routes need credentials
+          if (this._isAnonymous()) {
+            throw new Error(this._rejectAnonymous('Uploading a file'));
+          }
           const proceed = this._emitCancelable('formio:beforeFileUpload', {
             formData,
             config,
@@ -3204,6 +3338,9 @@
         },
 
         getFile: async (fileId, config = {}) => {
+          if (this._isAnonymous()) {
+            throw new Error(this._rejectAnonymous('Downloading a file'));
+          }
           const proceed = this._emitCancelable('formio:beforeFileDownload', {
             fileId,
             config,
@@ -3218,6 +3355,9 @@
         },
 
         deleteFile: async (fileInfo) => {
+          if (this._isAnonymous()) {
+            throw new Error(this._rejectAnonymous('Deleting a file'));
+          }
           const fileId = fileInfo?.data?.id || fileInfo?.id;
           const proceed = this._emitCancelable('formio:beforeFileDelete', {
             fileInfo,
@@ -3296,6 +3436,11 @@
      */
     async _loadPrefillData() {
       if (!this.submissionId) {
+        this._prefillData = null;
+        return;
+      }
+      if (this._isAnonymous()) {
+        this._rejectAnonymous('Loading a submission');
         this._prefillData = null;
         return;
       }

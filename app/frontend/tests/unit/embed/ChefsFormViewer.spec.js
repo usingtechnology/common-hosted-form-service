@@ -542,8 +542,9 @@ describe('ChefsFormViewer', () => {
       expect(urls.componentsJs).toBe(
         `${root}/form-viewer/bcgov-formio-components.use.min.js`
       );
+      // No credentials are set, so the form routes are the anonymous ones
       expect(urls.schema).toBe(
-        'https://chefs.example/app/webcomponents/v1/form-viewer/:formId/schema'
+        'https://chefs.example/app/webcomponents/v1/public/:formId/schema'
       );
       expect(urls).not.toHaveProperty('formioJsFallback');
       expect(urls).not.toHaveProperty('iconsCssFallback');
@@ -859,6 +860,7 @@ describe('ChefsFormViewer internals', () => {
 
     beforeEach(() => {
       el.formId = 'form-1';
+      el.apiKey = 'test-key';
       el.formioInstance = { submission: { data: { name: 'Ada' } } };
       el._emitCancelable = vi.fn().mockReturnValue(true);
       el._waitUntil = vi.fn().mockResolvedValue(true);
@@ -875,6 +877,132 @@ describe('ChefsFormViewer internals', () => {
 
     afterEach(() => {
       globalThis.setTimeout = originalSetTimeout;
+    });
+
+    describe('anonymous', () => {
+      const saved = {
+        id: 'sub-1',
+        confirmationId: 'SUB1',
+        createdAt: '2026-10-23T00:00:00.000Z',
+      };
+
+      beforeEach(() => {
+        el.apiKey = null;
+        el.setSubmission = vi.fn();
+        globalThis.fetch.mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(saved),
+        });
+      });
+
+      it('shows the submitted data read-only without reading it back', async () => {
+        el.onPassthroughHeaders = () => ({
+          Authorization: 'Bearer host-token',
+          'X-Host': 'yes',
+        });
+        const done = [];
+        el.addEventListener('formio:submitDone', (e) => done.push(e.detail));
+
+        await el.submit();
+
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        const [url, init] = globalThis.fetch.mock.calls[0];
+        expect(url).toMatch(/\/webcomponents\/v1\/public\/form-1\/submit$/);
+        expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+        expect(done).toEqual([
+          { submission: saved, showConfirmationId: false, hideContent: false },
+        ]);
+        expect(el._initFormio).toHaveBeenCalledTimes(1);
+        expect(el.setSubmission).toHaveBeenCalledWith({
+          name: 'Ada',
+          submit: true,
+        });
+        expect(el.submissionId).toBeNull();
+        expect(el.readOnly).toBe(true);
+        expect(el._isBusy).toBe(false);
+      });
+
+      it('shows the data as sent, not edits made while it was saving', async () => {
+        globalThis.fetch.mockReset();
+        globalThis.fetch.mockImplementationOnce(async () => {
+          el.formioInstance.submission.data.name = 'Edited later';
+          return { ok: true, json: () => Promise.resolve(saved) };
+        });
+
+        await el.submit();
+
+        expect(el.setSubmission).toHaveBeenCalledWith({
+          name: 'Ada',
+          submit: true,
+        });
+      });
+
+      it('keeps the anonymous result when the host adds a key during submitDone', async () => {
+        el.addEventListener('formio:submitDone', () => (el.apiKey = 'late-key'), {
+          once: true,
+        });
+
+        await el.submit();
+
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(el.submissionId).toBeNull();
+        expect(el.setSubmission).toHaveBeenCalledWith({
+          name: 'Ada',
+          submit: true,
+        });
+      });
+
+      it('clears the form when its settings hide submission contents', async () => {
+        el.form = {
+          showSubmissionConfirmation: true,
+          hideSubmissionContentOnSuccess: true,
+        };
+        el.shadowRoot.querySelector('#formio-container').textContent = 'form';
+        const done = [];
+        el.addEventListener('formio:submitDone', (e) => done.push(e.detail));
+
+        await el.submit();
+
+        expect(done[0]).toMatchObject({
+          showConfirmationId: true,
+          hideContent: true,
+        });
+        expect(el._initFormio).not.toHaveBeenCalled();
+        expect(el.setSubmission).not.toHaveBeenCalled();
+        expect(el.formioInstance).toBeNull();
+        expect(
+          el.shadowRoot.querySelector('#formio-container').childNodes
+        ).toHaveLength(0);
+        expect(el._isBusy).toBe(false);
+      });
+    });
+
+    it('clears a keyed form whose settings hide submission contents', async () => {
+      el.form = { hideSubmissionContentOnSuccess: true };
+      el.shadowRoot.querySelector('#formio-container').textContent = 'form';
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 'sub-1' }),
+      });
+      const events = [];
+      el.addEventListener('formio:submitDone', (e) =>
+        events.push(`submitDone hide=${e.detail.hideContent}`)
+      );
+      el.addEventListener('formio:autoReloadComplete', () =>
+        events.push('autoReloadComplete')
+      );
+
+      await el.submit();
+
+      expect(events).toEqual(['submitDone hide=true', 'autoReloadComplete']);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(el._initFormio).not.toHaveBeenCalled();
+      expect(el.submissionId).toBeNull();
+      expect(el.formioInstance).toBeNull();
+      expect(
+        el.shadowRoot.querySelector('#formio-container').childNodes
+      ).toHaveLength(0);
+      expect(el._isBusy).toBe(false);
     });
 
     it('loads the submission read-only while submit() holds the busy lock', async () => {
@@ -1235,6 +1363,24 @@ describe('ChefsFormViewer internals', () => {
     globalThis.FormViewerUtils.createBasicAuthHeader = orig;
     spy.mockRestore();
   });
+
+  it.each([
+    ['anonymous', {}],
+    ['with an API key', { apiKey: 'key' }],
+  ])(
+    'refreshAuthToken does nothing without an auth token (%s)',
+    async (_name, settings) => {
+      Object.assign(el, settings);
+      el._emit = vi.fn();
+      el._scheduleNextTokenRefresh = vi.fn();
+
+      await el.refreshAuthToken();
+
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(el._emit).not.toHaveBeenCalled();
+      expect(el._scheduleNextTokenRefresh).not.toHaveBeenCalled();
+    }
+  );
 
   it('refreshAuthToken makes POST request and updates token on success', async () => {
     el.getBaseUrl = () => 'https://example.com';
@@ -2169,6 +2315,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_ensurePrintButtonEnabled re-enables the print button in read-only', () => {
+    el.apiKey = 'test-key';
     const buttonRef = {};
     const buttonComponent = {
       component: { key: 'print', disabled: true },
@@ -2303,6 +2450,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_loadPrefillData fetches submission data when submissionId present', async () => {
+    el.apiKey = 'test-key';
     el.submissionId = 'test-submission';
     el._resolveUrl = vi.fn().mockReturnValue('https://test/submission');
     el._buildAuthHeader = vi
@@ -2376,7 +2524,35 @@ describe('ChefsFormViewer internals', () => {
 
     await el._manualSubmit(submission);
     expect(el._emit).toHaveBeenCalledWith('formio:submit', { submission });
-    expect(el._emit).toHaveBeenCalledWith('formio:submitDone', { submission });
+    expect(el._emit).toHaveBeenCalledWith('formio:submitDone', {
+      submission,
+      showConfirmationId: false,
+      hideContent: false,
+    });
+  });
+
+  it('_manualSubmit passes the form confirmation settings with submitDone', async () => {
+    el.apiKey = 'test-key';
+    el.form = {
+      showSubmissionConfirmation: true,
+      hideSubmissionContentOnSuccess: true,
+    };
+    el.autoReloadOnSubmit = false;
+    el._emitCancelable = vi.fn().mockReturnValue(true);
+    el._waitUntil = vi.fn().mockResolvedValue(true);
+    el._emit = vi.fn();
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ id: 'sub-1', confirmationId: 'SUB1' }),
+    });
+
+    await el._manualSubmit({ data: { a: 1 } });
+
+    expect(el._emit).toHaveBeenCalledWith('formio:submitDone', {
+      submission: { id: 'sub-1', confirmationId: 'SUB1' },
+      showConfirmationId: true,
+      hideContent: true,
+    });
   });
 
   it('_manualSubmit saves a draft with draft: true', async () => {
@@ -2443,7 +2619,12 @@ describe('ChefsFormViewer internals', () => {
     // Test submission (should trigger auto-reload)
     el.autoReloadOnSubmit = true;
     await el._manualSubmit(submission, true);
-    expect(el._handleAutoReload).toHaveBeenCalledWith(submitResult.submission);
+    // No credentials in this test, so the submit was anonymous
+    expect(el._handleAutoReload).toHaveBeenCalledWith(
+      submitResult.submission,
+      submission.data,
+      true
+    );
 
     // Test draft (should not trigger auto-reload)
     el._handleAutoReload.mockClear();
@@ -2458,6 +2639,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_handleAutoReload emits events and reloads form when not cancelled', async () => {
+    el.apiKey = 'test-key';
     const submission = { id: 'submission-123' };
     el._emitCancelable = vi.fn().mockReturnValue(true);
     el._waitUntil = vi.fn().mockResolvedValue(true);
@@ -2537,6 +2719,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_handleAutoReload handles reload errors gracefully', async () => {
+    el.apiKey = 'test-key';
     const submission = { id: 'submission-123' };
     el._emitCancelable = vi.fn().mockReturnValue(true);
     el._waitUntil = vi.fn().mockResolvedValue(true);
@@ -2969,6 +3152,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_loadSchema handles fetch errors', async () => {
+    el.apiKey = 'test-key';
     el._resolveUrl = vi.fn().mockReturnValue('https://test/schema');
     el._buildAuthHeader = vi.fn().mockReturnValue({});
     el._emit = vi.fn().mockReturnValue(true);
@@ -3376,6 +3560,7 @@ describe('ChefsFormViewer internals', () => {
 
   // print() method tests
   it('print acquires and releases busy lock', async () => {
+    el.apiKey = 'test-key';
     const acquireSpy = vi.spyOn(el, '_acquireBusyLock').mockReturnValue(true);
     const releaseSpy = vi.spyOn(el, '_releaseBusyLock');
     el._emitCancelable = vi.fn().mockReturnValue(true);
@@ -3403,6 +3588,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('print emits formio:beforePrint event', async () => {
+    el.apiKey = 'test-key';
     const eventSpy = vi.fn();
     el.addEventListener('formio:beforePrint', eventSpy);
 
@@ -3427,6 +3613,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('print handles print errors gracefully', async () => {
+    el.apiKey = 'test-key';
     el._acquireBusyLock = vi.fn().mockReturnValue(true);
     el._releaseBusyLock = vi.fn();
     el._emitCancelable = vi.fn().mockReturnValue(true);
@@ -3449,6 +3636,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('print respects cancelled event', async () => {
+    el.apiKey = 'test-key';
     el._acquireBusyLock = vi.fn().mockReturnValue(true);
     el._releaseBusyLock = vi.fn();
     el._emitCancelable = vi.fn().mockReturnValue(false);
@@ -3527,5 +3715,167 @@ describe('ChefsFormViewer internals', () => {
 
     expect(el._handleHostSubmit).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  describe('without CHEFS credentials', () => {
+    const errors = [];
+
+    beforeEach(() => {
+      errors.length = 0;
+      el.baseUrl = 'https://chefs.example/app';
+      el.formId = 'form-1';
+      el.addEventListener('formio:error', (e) => errors.push(e.detail.error));
+    });
+
+    it('loads and submits through the anonymous routes', () => {
+      expect(el._isAnonymous()).toBe(true);
+      expect(el._urls().schema).toBe(
+        'https://chefs.example/app/webcomponents/v1/public/form-1/schema'
+      );
+      expect(el._urls().submit).toBe(
+        'https://chefs.example/app/webcomponents/v1/public/form-1/submit'
+      );
+    });
+
+    it.each([
+      ['an API key', (viewer) => (viewer.apiKey = 'key')],
+      ['an auth token', (viewer) => (viewer.authToken = 'token')],
+      ['an auth header hook', (viewer) => (viewer.onBuildAuthHeader = () => ({}))],
+    ])('uses the keyed routes with %s', (_name, setCredential) => {
+      setCredential(el);
+      expect(el._isAnonymous()).toBe(false);
+      expect(el._urls().schema).toBe(
+        'https://chefs.example/app/webcomponents/v1/form-viewer/form-1/schema'
+      );
+    });
+
+    it.each([['schema'], ['submit']])(
+      'stays keyed when the host overrides the %s endpoint',
+      (key) => {
+        el.endpoints = { [key]: `https://proxy.example/${key}` };
+        const other = key === 'schema' ? 'submit' : 'schema';
+        expect(el._isAnonymous()).toBe(false);
+        expect(el._urls()[key]).toBe(`https://proxy.example/${key}`);
+        expect(el._urls()[other]).toMatch(/\/webcomponents\/v1\/form-viewer\//);
+      }
+    );
+
+    it('stays anonymous when the host overrides only an asset', () => {
+      el.endpoints = { themeCss: 'https://host.example/theme.css' };
+      expect(el._isAnonymous()).toBe(true);
+    });
+
+    it('sends no credentials or host headers with the schema request', async () => {
+      el.onPassthroughHeaders = () => ({
+        Authorization: 'Bearer host-token',
+        'X-Host': 'yes',
+      });
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ form: { name: 'Form' }, schema: { components: [] } }),
+      });
+
+      await el._loadSchema();
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://chefs.example/app/webcomponents/v1/public/form-1/schema',
+        { headers: {} }
+      );
+    });
+
+    it('explains what an anonymous embed needs when CHEFS refuses it', async () => {
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: () =>
+          Promise.resolve({
+            detail: 'This website is not allowed to embed this form.',
+          }),
+      });
+
+      await expect(el._loadSchema()).rejects.toThrow(
+        'This website is not allowed to embed this form. Embedding without an API key or auth token needs a form that uses the Public login option and lists this website in its allowed origins.'
+      );
+      expect(errors).toHaveLength(1);
+    });
+
+    it('ends the CHEFS message with a full stop before the hint', async () => {
+      const res = {
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ detail: 'Resource not found' }),
+      };
+      expect(await el._requestError(res, 'fallback', true)).toMatch(
+        /^Resource not found\. Embedding without an API key/
+      );
+    });
+
+    it('does not add the anonymous hint to keyed or other errors', async () => {
+      const res = (status) => ({
+        ok: false,
+        status,
+        json: () => Promise.resolve({ detail: 'Nope.' }),
+      });
+      expect(await el._requestError(res(403), 'fallback', false)).toBe('Nope.');
+      expect(await el._requestError(res(400), 'fallback', true)).toBe('Nope.');
+    });
+
+    it.each([
+      ['print', (viewer) => viewer.print(), 'Printing'],
+      [
+        'a submission-id prefill',
+        (viewer) => {
+          viewer.submissionId = 'sub-1';
+          return viewer._loadPrefillData();
+        },
+        'Loading a submission',
+      ],
+    ])('refuses %s with a clear error', async (_name, run, action) => {
+      await run(el);
+
+      expect(errors).toEqual([`${action} needs an API key or auth token.`]);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(el._isBusy).toBe(false);
+    });
+
+    it.each([
+      ['an upload', (files) => files.uploadFile(new FormData()), 'Uploading'],
+      ['a download', (files) => files.getFile('file-1'), 'Downloading'],
+      ['a delete', (files) => files.deleteFile({ id: 'file-1' }), 'Deleting'],
+    ])('refuses %s with a clear error', async (_name, run, verb) => {
+      el.onPassthroughHeaders = vi.fn(() => ({ 'X-Host': 'yes' }));
+      const message = `${verb} a file needs an API key or auth token.`;
+
+      await expect(run(el._getSimpleFileComponentOptions())).rejects.toThrow(
+        message
+      );
+
+      expect(errors).toEqual([message]);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(el.onPassthroughHeaders).not.toHaveBeenCalled();
+    });
+
+    it('does not force the print button on', () => {
+      const component = { component: { key: 'print' }, disabled: true };
+      el.formioInstance = { getComponent: () => component };
+
+      el._ensurePrintButtonEnabled('test');
+
+      expect(component.disabled).toBe(true);
+    });
+
+    it('refuses a draft because a Public form never allows drafts', async () => {
+      el.form = {
+        enableSubmitterDraft: true,
+        identityProviders: [{ code: 'public' }],
+      };
+      el._programmaticSubmit = vi.fn();
+
+      await el.draft();
+
+      expect(errors).toEqual(['This form does not allow saving drafts.']);
+      expect(el._programmaticSubmit).not.toHaveBeenCalled();
+    });
   });
 });
