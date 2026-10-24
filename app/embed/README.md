@@ -9,6 +9,8 @@ Each folder in `releases/` is a committed, immutable release of the `chefs-form-
 | `v1`    | Legacy URLs (see below)                   | Frozen copy of everything the image build used to generate. Byte-identical to before.      |
 | `x.y.z` | `/app/embed/<x.y.z>/<path>`               | Every file in the folder, including `integrity.json`.                                      |
 
+What each release contains, and how to embed one, is in [`app/frontend/public/embed/README.md`](../frontend/public/embed/README.md#releases).
+
 Base paths follow the deployment, for example `/pr-1234/embed/1.1.0/...` in PR environments.
 
 `v1` keeps its original URLs:

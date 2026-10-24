@@ -8,6 +8,11 @@
  * @example Basic Usage
  * <script src="/app/embed/chefs-form-viewer-embed.js?form-id=123&auth-token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></script>
  *
+ * @example Release (integrity is the file's hash in the release's integrity.json)
+ * <script
+ *   src="https://chefs.example/app/embed/<version>/embed/chefs-form-viewer-embed.min.js?form-id=123&auth-token=..."
+ *   integrity="sha384-..." crossorigin="anonymous"></script>
+ *
  * @example Advanced Usage with Global Config
  * <script>
  *   globalThis.ChefsViewerConfig = {
@@ -231,6 +236,12 @@
 
   const NAMESPACE = 'chefs-form-viewer-embed';
 
+  // A release build replaces these with its version and the SRI hashes of its files
+  const RELEASE = {
+    version: /*__CHEFS_RELEASE_VERSION__*/ null,
+    integrity: /*__CHEFS_RELEASE_INTEGRITY__*/ {},
+  };
+
   // Utility functions that can be tested independently
 
   /**
@@ -340,6 +351,27 @@
   }
 
   /**
+   * Finds the component script next to the embed script. A release loads its
+   * minified component and checks it against the release's SRI hash.
+   *
+   * @param {string} scriptSrc - The embed script's URL, with or without .min and query parameters
+   * @param {Object} release - Release version and SRI hashes
+   * @returns {Object} { src, integrity } where integrity is null outside a release
+   * @example
+   * componentScript('https://host/app/embed/1.0.0/embed/chefs-form-viewer-embed.min.js?form-id=1', release)
+   * // Returns: { src: 'https://host/app/embed/1.0.0/embed/chefs-form-viewer.min.js', integrity: 'sha384-...' }
+   */
+  function componentScript(scriptSrc, release = RELEASE) {
+    const file = release.version
+      ? 'chefs-form-viewer.min.js'
+      : 'chefs-form-viewer.js';
+    return {
+      src: new URL(file, scriptSrc).href,
+      integrity: release.integrity[`embed/${file}`] || null,
+    };
+  }
+
+  /**
    * Dynamically loads the chefs-form-viewer component script if not already present.
    * Uses the embed script's URL to determine the component script location.
    * Waits for custom element definition to ensure component is ready for use.
@@ -355,14 +387,18 @@
     }
 
     logger.info('Loading chefs-form-viewer component');
-    const componentScript = document.createElement('script');
-    const baseUrl = script.src.split('/chefs-form-viewer-embed.js')[0];
-    componentScript.src = `${baseUrl}/chefs-form-viewer.js`;
+    const componentScriptElement = document.createElement('script');
+    const { src, integrity } = componentScript(script.src);
+    componentScriptElement.src = src;
+    if (integrity) {
+      componentScriptElement.integrity = integrity;
+      componentScriptElement.crossOrigin = 'anonymous';
+    }
 
     await new Promise((resolve, reject) => {
-      componentScript.onload = resolve;
-      componentScript.onerror = reject;
-      document.head.appendChild(componentScript);
+      componentScriptElement.onload = resolve;
+      componentScriptElement.onerror = reject;
+      document.head.appendChild(componentScriptElement);
     });
 
     await customElements.whenDefined('chefs-form-viewer');
@@ -407,6 +443,10 @@
     function handleBooleanParam(attrName, value) {
       if (parseBooleanParam(value)) {
         element.setAttribute(attrName, '');
+      } else if (attrName !== 'no-shadow') {
+        // The component reads these values, so "false" can turn off auto-reload-on-submit.
+        // no-shadow is read by presence, so a false value leaves it unset.
+        element.setAttribute(attrName, 'false');
       }
     }
 
@@ -635,6 +675,7 @@
       paramToAttribute,
       createLogger,
       applyQueryParams,
+      componentScript,
     };
   } else if (
     typeof globalThis !== 'undefined' &&
@@ -648,6 +689,7 @@
       paramToAttribute,
       createLogger,
       applyQueryParams,
+      componentScript,
     };
   }
 

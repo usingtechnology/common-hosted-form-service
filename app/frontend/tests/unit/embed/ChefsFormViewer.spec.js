@@ -238,12 +238,48 @@ describe('FormViewerUtils', () => {
     );
   });
 
-  it('resolveUrlWithFallback returns both', () => {
-    const endpoints = { a: '/a', b: '/b' };
-    expect(utils.resolveUrlWithFallback(endpoints, 'a', 'b')).toEqual({
-      primary: '/a',
-      fallback: '/b',
+  it('parseReleaseUrl finds the base and release folder from a release script', () => {
+    expect(
+      utils.parseReleaseUrl(
+        'https://chefs.example/app/embed/1.0.0/embed/chefs-form-viewer.min.js',
+        '1.0.0'
+      )
+    ).toEqual({
+      baseUrl: 'https://chefs.example/app',
+      releaseUrl: 'https://chefs.example/app/embed/1.0.0',
     });
+    expect(
+      utils.parseReleaseUrl(
+        'https://chefs.example/pr-1966/embed/1.0.0/embed/chefs-form-viewer.js?x=1',
+        '1.0.0'
+      )
+    ).toEqual({
+      baseUrl: 'https://chefs.example/pr-1966',
+      releaseUrl: 'https://chefs.example/pr-1966/embed/1.0.0',
+    });
+  });
+
+  it('parseReleaseUrl returns null outside that release', () => {
+    const src =
+      'https://chefs.example/app/embed/1.0.0/embed/chefs-form-viewer.min.js';
+    expect(utils.parseReleaseUrl(src, '1.1.0')).toBeNull();
+    expect(utils.parseReleaseUrl(src, null)).toBeNull();
+    expect(
+      utils.parseReleaseUrl(
+        'https://chefs.example/app/embed/chefs-form-viewer.js',
+        '1.0.0'
+      )
+    ).toBeNull();
+    expect(utils.parseReleaseUrl(null, '1.0.0')).toBeNull();
+    expect(utils.parseReleaseUrl('not a url', '1.0.0')).toBeNull();
+  });
+
+  it('sriAttributes adds integrity and anonymous CORS only with a hash', () => {
+    expect(utils.sriAttributes('sha384-abc')).toEqual({
+      integrity: 'sha384-abc',
+      crossorigin: 'anonymous',
+    });
+    expect(utils.sriAttributes(null)).toEqual({});
   });
 
   it('substituteUrlParams replaces params', () => {
@@ -464,6 +500,159 @@ describe('ChefsFormViewer', () => {
     expect(el.getBaseUrl()).toMatch(/^https?:\/\//);
   });
 
+  describe('in a release', () => {
+    const releaseSrc =
+      'https://chefs.example/app/embed/1.0.0/embed/chefs-form-viewer.min.js';
+    const release = {
+      version: '1.0.0',
+      integrity: {
+        'assets/chefs-index.css': 'sha384-index',
+        'assets/chefs-theme.css': 'sha384-theme',
+        'assets/formio.full.min.js': 'sha384-formio',
+      },
+    };
+
+    beforeEach(() => {
+      el._release = release;
+      el._scriptSrc = releaseSrc;
+    });
+
+    it('getBaseUrl uses the server the script was loaded from', () => {
+      expect(el.getBaseUrl()).toBe('https://chefs.example/app');
+      el.baseUrl = 'https://other.example/app';
+      expect(el.getBaseUrl()).toBe('https://other.example/app');
+    });
+
+    it('getBaseUrl falls back to the page location for a script elsewhere', () => {
+      el._scriptSrc = 'https://cdn.example/chefs-form-viewer.min.js';
+      expect(el.getBaseUrl()).toBe(
+        FormViewerUtils.parseBaseUrl(globalThis.location)
+      );
+    });
+
+    it('loads default assets from the release folder', () => {
+      const urls = el._urls();
+      const root = 'https://chefs.example/app/embed/1.0.0';
+      expect(urls.mainCss).toBe(`${root}/assets/chefs-index.css`);
+      expect(urls.themeCss).toBe(`${root}/assets/chefs-theme.css`);
+      expect(urls.iconsCss).toBe(
+        `${root}/assets/font-awesome/css/font-awesome.min.css`
+      );
+      expect(urls.formioJs).toBe(`${root}/assets/formio.full.min.js`);
+      expect(urls.componentsJs).toBe(
+        `${root}/form-viewer/bcgov-formio-components.use.min.js`
+      );
+      expect(urls.schema).toBe(
+        'https://chefs.example/app/webcomponents/v1/form-viewer/:formId/schema'
+      );
+      expect(urls).not.toHaveProperty('formioJsFallback');
+      expect(urls).not.toHaveProperty('iconsCssFallback');
+      expect(el._getFontFaceCSS()).toContain(
+        `${root}/assets/font-awesome/fonts/fontawesome-webfont.woff2`
+      );
+    });
+
+    it('uses the release hash only for the release folder URL', () => {
+      const root = 'https://chefs.example/app/embed/1.0.0';
+      expect(
+        el._assetIntegrity('mainCss', `${root}/assets/chefs-index.css`)
+      ).toBe('sha384-index');
+      expect(
+        el._assetIntegrity('themeCss', `${root}/assets/chefs-theme.css`)
+      ).toBe('sha384-theme');
+      // A theme-css attribute or endpoint override is not the release's file
+      expect(
+        el._assetIntegrity('themeCss', 'https://host.example/theme.css')
+      ).toBeNull();
+      expect(
+        el._assetIntegrity('mainCss', 'https://host.example/my.css')
+      ).toBeNull();
+      // No hash recorded for the file
+      expect(
+        el._assetIntegrity(
+          'componentsJs',
+          `${root}/form-viewer/bcgov-formio-components.use.min.js`
+        )
+      ).toBeNull();
+      expect(el._assetIntegrity('schema', `${root}/x`)).toBeNull();
+    });
+
+    it('uses base-url for a release script served from elsewhere', () => {
+      el._scriptSrc = 'https://cdn.example/chefs-form-viewer.min.js';
+      el.baseUrl = 'https://chefs.example/pr-1966';
+      const root = 'https://chefs.example/pr-1966/embed/1.0.0';
+      expect(el._urls().mainCss).toBe(`${root}/assets/chefs-index.css`);
+      expect(
+        el._assetIntegrity('mainCss', `${root}/assets/chefs-index.css`)
+      ).toBe('sha384-index');
+    });
+
+    it('loads assets with their release hash', async () => {
+      el._injectScript = vi.fn().mockResolvedValue(true);
+      el._loadCssIntoRoot = vi.fn().mockResolvedValue(true);
+      const root = 'https://chefs.example/app/embed/1.0.0';
+
+      await el._loadAsset(
+        'mainCss',
+        `${root}/assets/chefs-index.css`,
+        true,
+        'critical-css'
+      );
+      await el._loadAsset(
+        'formioJs',
+        `${root}/assets/formio.full.min.js`,
+        true,
+        'formio-js'
+      );
+      await el._loadAsset(
+        'componentsJs',
+        'https://host.example/components.js',
+        true,
+        'components-js'
+      );
+
+      expect(el._loadCssIntoRoot).toHaveBeenCalledWith(
+        `${root}/assets/chefs-index.css`,
+        'sha384-index'
+      );
+      expect(el._injectScript).toHaveBeenCalledWith(
+        `${root}/assets/formio.full.min.js`,
+        'sha384-formio'
+      );
+      expect(el._injectScript).toHaveBeenCalledWith(
+        'https://host.example/components.js',
+        null
+      );
+    });
+
+    it('preloads with the same integrity and CORS mode as the load', async () => {
+      el._addResourceHint = vi.fn();
+      const root = 'https://chefs.example/app/embed/1.0.0';
+
+      await el._loadAssetHints();
+
+      expect(el._addResourceHint).toHaveBeenCalledWith(
+        'preload',
+        `${root}/assets/chefs-index.css`,
+        { as: 'style', integrity: 'sha384-index', crossorigin: 'anonymous' }
+      );
+    });
+  });
+
+  it('outside a release, loads assets from the v1 routes without a hash', () => {
+    el.baseUrl = 'https://x/app';
+    const urls = el._urls();
+    expect(urls.mainCss).toBe('https://x/app/webcomponents/v1/assets/chefs-index.css');
+    expect(urls.formioJs).toBe('https://x/app/webcomponents/v1/assets/formio.js');
+    expect(urls.componentsJs).toBe(
+      'https://x/app/webcomponents/v1/form-viewer/components'
+    );
+    expect(el._assetIntegrity('mainCss', urls.mainCss)).toBeNull();
+    expect(el._getFontFaceCSS()).toContain(
+      'https://x/app/webcomponents/v1/assets/font-awesome/fonts/'
+    );
+  });
+
   it('setSubmission and getSubmission work', () => {
     el.formioInstance = {
       setSubmission: vi.fn(),
@@ -598,9 +787,15 @@ describe('ChefsFormViewer internals', () => {
     releaseSpy.mockRestore();
   });
 
+  const draftForm = {
+    enableSubmitterDraft: true,
+    identityProviders: [{ code: 'idir' }],
+  };
+
   it('draft calls _acquireBusyLock and _releaseBusyLock correctly', async () => {
     const acquireSpy = vi.spyOn(el, '_acquireBusyLock').mockReturnValue(true);
     const releaseSpy = vi.spyOn(el, '_releaseBusyLock');
+    el.form = draftForm;
     el._programmaticSubmit = vi.fn();
     await el.draft();
     expect(acquireSpy).toHaveBeenCalledWith('draft');
@@ -609,9 +804,40 @@ describe('ChefsFormViewer internals', () => {
     releaseSpy.mockRestore();
   });
 
+  it.each([
+    ['drafts are off', { enableSubmitterDraft: false }],
+    ['the setting is missing', {}],
+    [
+      'the form is Public',
+      { enableSubmitterDraft: true, identityProviders: [{ code: 'public' }] },
+    ],
+  ])('draft reports an error and sends nothing when %s', async (_name, form) => {
+    el.form = form;
+    el._programmaticSubmit = vi.fn();
+    const errors = [];
+    el.addEventListener('formio:error', (e) => errors.push(e.detail.error));
+
+    await el.draft();
+
+    expect(errors).toEqual(['This form does not allow saving drafts.']);
+    expect(el._programmaticSubmit).not.toHaveBeenCalled();
+    expect(el._isBusy).toBe(false);
+  });
+
+  it('draft goes to the host in host mode whatever the form allows', async () => {
+    el.form = { enableSubmitterDraft: false };
+    el.submitMode = 'host';
+    el._programmaticSubmit = vi.fn();
+
+    await el.draft();
+
+    expect(el._programmaticSubmit).toHaveBeenCalledWith(false);
+  });
+
   it('draft does not trigger auto-reload even when enabled', async () => {
     const acquireSpy = vi.spyOn(el, '_acquireBusyLock').mockReturnValue(true);
     const releaseSpy = vi.spyOn(el, '_releaseBusyLock');
+    el.form = draftForm;
     el._programmaticSubmit = vi.fn().mockImplementation(async (isSubmit) => {
       // Simulate draft save - should not trigger auto-reload
       if (isSubmit && el.autoReloadOnSubmit) {
@@ -626,6 +852,111 @@ describe('ChefsFormViewer internals', () => {
 
     acquireSpy.mockRestore();
     releaseSpy.mockRestore();
+  });
+
+  describe('reload at the end of submit()', () => {
+    let originalSetTimeout;
+
+    beforeEach(() => {
+      el.formId = 'form-1';
+      el.formioInstance = { submission: { data: { name: 'Ada' } } };
+      el._emitCancelable = vi.fn().mockReturnValue(true);
+      el._waitUntil = vi.fn().mockResolvedValue(true);
+      el._buildAuthHeader = vi.fn().mockReturnValue({});
+      el._loadSchema = vi.fn().mockResolvedValue(undefined);
+      el._initFormio = vi.fn().mockResolvedValue(undefined);
+      // Run the auto-reload delay immediately
+      originalSetTimeout = globalThis.setTimeout;
+      globalThis.setTimeout = vi.fn((callback) => {
+        callback();
+        return 1;
+      });
+    });
+
+    afterEach(() => {
+      globalThis.setTimeout = originalSetTimeout;
+    });
+
+    it('loads the submission read-only while submit() holds the busy lock', async () => {
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 'sub-1' }),
+      });
+
+      await el.submit();
+
+      expect(el._initFormio).toHaveBeenCalledTimes(1);
+      expect(el.submissionId).toBe('sub-1');
+      expect(el.readOnly).toBe(true);
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('shows host-mode data read-only while submit() holds the busy lock', async () => {
+      el.submitMode = 'host';
+      el.setSubmission = vi.fn();
+
+      await el.submit();
+
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(el._initFormio).toHaveBeenCalledTimes(1);
+      expect(el.setSubmission).toHaveBeenCalledWith({
+        name: 'Ada',
+        submit: true,
+      });
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('leaves a lock taken by a formio:ready handler to that handler', async () => {
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 'sub-1' }),
+      });
+      el.addEventListener('formio:ready', () => el._acquireBusyLock('print'), {
+        once: true,
+      });
+
+      await el.submit();
+
+      expect(el._isBusy).toBe(true);
+      el._releaseBusyLock();
+    });
+
+    it('takes the lock for a button submit, and skips while another call holds it', async () => {
+      el._isBusy = true;
+      await el._reloadAfterSubmit();
+      expect(el._initFormio).not.toHaveBeenCalled();
+      expect(el._isBusy).toBe(true);
+
+      el._isBusy = false;
+      await el._reloadAfterSubmit();
+      expect(el._initFormio).toHaveBeenCalledTimes(1);
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('releases the lock when destroy fails', async () => {
+      el.destroy = vi.fn().mockRejectedValue(new Error('boom'));
+      await expect(el._reloadAfterSubmit()).rejects.toThrow('boom');
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('does not reload an element removed from the page', async () => {
+      el.remove();
+      await el._reloadAfterSubmit();
+      expect(el._initFormio).not.toHaveBeenCalled();
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('reports a failed host-mode display instead of rejecting', async () => {
+      el.submitMode = 'host';
+      el._loadSchema = vi.fn().mockRejectedValue(new Error('offline'));
+      const errors = [];
+      el.addEventListener('formio:error', (e) => errors.push(e.detail.error));
+
+      await expect(el.submit()).resolves.toBeUndefined();
+
+      expect(errors).toEqual(['Read-only display failed: offline']);
+      expect(el._isBusy).toBe(false);
+    });
   });
 
   it('_buildAuthHeader uses custom hook when provided', () => {
@@ -1591,63 +1922,52 @@ describe('ChefsFormViewer internals', () => {
     delete globalThis.globalThis.Formio;
   });
 
-  it('_getAssetLoadFunction returns correct loader for .js/.css', () => {
-    const cssLoader = el._getAssetLoadFunction('https://x/foo.css');
-    expect(typeof cssLoader).toBe('function');
-    expect(cssLoader.toString()).toMatch(/_loadCssIntoRoot/);
-    const jsLoader = el._getAssetLoadFunction('https://x/foo.js');
-    expect(typeof jsLoader).toBe('function');
-    expect(jsLoader.toString()).toMatch(/_injectScript/);
+  it('_loadAsset loads each key as its declared kind without probing the URL', async () => {
+    el._injectScript = vi.fn().mockResolvedValue(true);
+    el._loadCssIntoRoot = vi.fn().mockResolvedValue(true);
+
+    // The v1 components route has no extension; its kind comes from the key
+    await el._loadAsset(
+      'componentsJs',
+      'https://x/app/webcomponents/v1/form-viewer/components',
+      true,
+      'components-js'
+    );
+    await el._loadAsset('themeCss', 'https://x/theme', false, 'theme-css');
+
+    expect(el._injectScript).toHaveBeenCalledWith(
+      'https://x/app/webcomponents/v1/form-viewer/components',
+      null
+    );
+    expect(el._loadCssIntoRoot).toHaveBeenCalledWith('https://x/theme', null);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(el._loadedAssets.get('components-js')).toBe(
+      'https://x/app/webcomponents/v1/form-viewer/components'
+    );
   });
 
-  it('_detectAssetTypeByContentType returns js/css/null based on Content-Type', async () => {
-    globalThis.fetch.mockResolvedValueOnce({
-      headers: { get: () => 'application/javascript' },
-    });
-    expect(await el._detectAssetTypeByContentType('https://x/foo')).toBe('js');
-    globalThis.fetch.mockResolvedValueOnce({
-      headers: { get: () => 'text/css' },
-    });
-    expect(await el._detectAssetTypeByContentType('https://x/bar')).toBe('css');
-    globalThis.fetch.mockResolvedValueOnce({
-      headers: { get: () => 'text/html' },
-    });
-    expect(await el._detectAssetTypeByContentType('https://x/baz')).toBe(null);
-    globalThis.fetch.mockRejectedValueOnce(new Error('fail'));
-    expect(await el._detectAssetTypeByContentType('https://x/fail')).toBe(null);
-  });
+  it('_injectScript and _loadCssIntoRoot add SRI attributes when given a hash', async () => {
+    const appended = [];
+    const appendSpy = vi
+      .spyOn(globalThis.FormViewerUtils, 'appendElement')
+      .mockImplementation((element) => {
+        appended.push(element);
+        element.onload();
+      });
 
-  it('_getAssetLoadFunction uses Content-Type detection for unknown extension and returns false for unknown type', async () => {
-    // Mock _detectAssetTypeByContentType to return js
-    el._detectAssetTypeByContentType = vi.fn().mockResolvedValueOnce('js');
-    el._injectScript = vi.fn().mockResolvedValueOnce(true);
-    expect(
-      await el._getAssetLoadFunction('https://x/foo')('https://x/foo')
-    ).toBe(true);
-    // Mock _detectAssetTypeByContentType to return css
-    el._detectAssetTypeByContentType = vi.fn().mockResolvedValueOnce('css');
-    el._loadCssIntoRoot = vi.fn().mockResolvedValueOnce(true);
-    expect(
-      await el._getAssetLoadFunction('https://x/bar')('https://x/bar')
-    ).toBe(true);
-    // Mock _detectAssetTypeByContentType to return null, fallback to .js
-    el._detectAssetTypeByContentType = vi.fn().mockResolvedValueOnce(null);
-    el._injectScript = vi.fn().mockResolvedValueOnce(true);
-    expect(
-      await el._getAssetLoadFunction('https://x/foo.js')('https://x/foo.js')
-    ).toBe(true);
-    // Mock _detectAssetTypeByContentType to return null, fallback to .css
-    el._detectAssetTypeByContentType = vi.fn().mockResolvedValueOnce(null);
-    el._loadCssIntoRoot = vi.fn().mockResolvedValueOnce(true);
-    expect(
-      await el._getAssetLoadFunction('https://x/bar.css')('https://x/bar.css')
-    ).toBe(true);
-    // Unknown type: _detectAssetTypeByContentType returns null, url has neither .js nor .css
-    el._detectAssetTypeByContentType = vi.fn().mockResolvedValueOnce(null);
-    expect(
-      await el._getAssetLoadFunction('https://x/unknown')('https://x/unknown')
-    ).toBe(false);
-    // ...existing code...
+    expect(await el._injectScript('https://x/a.js', 'sha384-js')).toBe(true);
+    expect(await el._loadCssIntoRoot('https://x/a.css', 'sha384-css')).toBe(
+      true
+    );
+    expect(await el._injectScript('https://x/b.js')).toBe(true);
+
+    expect(appended[0].getAttribute('integrity')).toBe('sha384-js');
+    expect(appended[0].getAttribute('crossorigin')).toBe('anonymous');
+    expect(appended[1].getAttribute('integrity')).toBe('sha384-css');
+    expect(appended[1].getAttribute('crossorigin')).toBe('anonymous');
+    expect(appended[2].hasAttribute('integrity')).toBe(false);
+    expect(appended[2].hasAttribute('crossorigin')).toBe(false);
+    appendSpy.mockRestore();
   });
 
   it('_injectScript returns false for malformed URLs and validation error', async () => {
@@ -1671,39 +1991,57 @@ describe('ChefsFormViewer internals', () => {
     expect(await el._loadCssIntoRoot('https://x/bar.css')).toBe(false);
     globalThis.FormViewerUtils.validateAssetUrl = origValidate;
   });
-  it('_loadAssetWithFallback returns true for preloaded asset, returns false if _tryLoadWithFallback or _validateLoadedAsset throws', async () => {
+  it('_loadAsset returns true for preloaded asset, throws for a required asset that fails to load or validate', async () => {
     // Preloaded asset
     const validateFn = vi.fn().mockReturnValue(true);
     el._isAssetPreLoaded = vi.fn().mockReturnValue(true);
-    const loaded = await el._loadAssetWithFallback(
-      'primary',
-      null,
+    el._injectScript = vi.fn();
+    const loaded = await el._loadAsset(
+      'formioJs',
+      'https://x/formio.js',
       true,
       'test-asset',
       validateFn
     );
     expect(loaded).toBe(true);
+    expect(el._injectScript).not.toHaveBeenCalled();
 
-    // Not preloaded, _tryLoadWithFallback throws
+    // Not preloaded, the loader throws
     el._isAssetPreLoaded = vi.fn().mockReturnValue(false);
-    el._getAssetLoadFunction = vi
-      .fn()
-      .mockReturnValue(vi.fn().mockResolvedValue(true));
-    el._tryLoadWithFallback = vi.fn().mockImplementation(() => {
-      throw new Error('fail');
-    });
+    el._injectScript = vi.fn().mockRejectedValue(new Error('fail'));
     await expect(
-      el._loadAssetWithFallback('primary', null, true, 'test-asset', validateFn)
+      el._loadAsset('formioJs', 'https://x/formio.js', true, 'test-asset')
     ).rejects.toThrow('Failed to load required asset: test-asset');
 
     // Not preloaded, _validateLoadedAsset throws
-    el._tryLoadWithFallback = vi.fn().mockResolvedValue(true);
+    el._injectScript = vi.fn().mockResolvedValue(true);
     el._validateLoadedAsset = vi.fn().mockImplementation(() => {
       throw new Error('fail');
     });
     await expect(
-      el._loadAssetWithFallback('primary', null, true, 'test-asset', validateFn)
+      el._loadAsset(
+        'formioJs',
+        'https://x/formio.js',
+        true,
+        'test-asset',
+        validateFn
+      )
     ).rejects.toThrow('Failed to load required asset: test-asset');
+
+    // An optional asset that fails is recorded, not thrown
+    delete el._validateLoadedAsset;
+    el._assetErrors = [];
+    el._loadCssIntoRoot = vi.fn().mockResolvedValue(false);
+    await expect(
+      el._loadAsset('themeCss', 'https://x/t.css', false, 'theme-css')
+    ).resolves.toBe(false);
+    expect(el._assetErrors).toEqual([
+      {
+        type: 'theme-css',
+        url: 'https://x/t.css',
+        error: 'Optional asset failed to load',
+      },
+    ]);
   });
 
   it('_parseJsonAttribute parses valid JSON and handles invalid input', () => {
@@ -1928,12 +2266,12 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_handleLoadResult throws for required failed assets, logs optional failures', () => {
-    expect(() =>
-      el._handleLoadResult(false, 'url', null, true, 'required')
-    ).toThrow('Failed to load required asset: required');
+    expect(() => el._handleLoadResult(false, 'url', true, 'required')).toThrow(
+      'Failed to load required asset: required'
+    );
 
     el._assetErrors = [];
-    el._handleLoadResult(false, 'url', 'fallback', false, 'optional');
+    el._handleLoadResult(false, 'url', false, 'optional');
     expect(el._assetErrors).toHaveLength(1);
     expect(el._assetErrors[0].type).toBe('optional');
   });
@@ -2041,6 +2379,28 @@ describe('ChefsFormViewer internals', () => {
     expect(el._emit).toHaveBeenCalledWith('formio:submitDone', { submission });
   });
 
+  it('_manualSubmit saves a draft with draft: true', async () => {
+    const submission = { data: { test: 'value', submit: false } };
+    el._resolveUrl = vi.fn().mockReturnValue('https://test/submit');
+    el._buildAuthHeader = vi.fn().mockReturnValue({});
+    el._emitCancelable = vi.fn().mockReturnValue(true);
+    el._waitUntil = vi.fn().mockResolvedValue(true);
+    el._emit = vi.fn();
+    el._handleAutoReload = vi.fn();
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ id: 'draft-1' }),
+    });
+
+    await el._manualSubmit(submission, false);
+
+    expect(JSON.parse(globalThis.fetch.mock.calls[0][1].body)).toEqual({
+      submission,
+      draft: true,
+    });
+    expect(el._handleAutoReload).not.toHaveBeenCalled();
+  });
+
   it('_manualSubmit handles submission errors', async () => {
     const submission = { data: { test: 'value' } };
     el._resolveUrl = vi.fn().mockReturnValue('https://test/submit');
@@ -2104,7 +2464,7 @@ describe('ChefsFormViewer internals', () => {
     el._emit = vi.fn();
     el.submissionId = null;
     el.readOnly = false;
-    el.reload = vi.fn().mockResolvedValue(undefined);
+    el._reloadAfterSubmit = vi.fn().mockResolvedValue(undefined);
 
     // Mock setTimeout to run immediately
     const originalSetTimeout = globalThis.setTimeout;
@@ -2125,7 +2485,7 @@ describe('ChefsFormViewer internals', () => {
     });
     expect(el.submissionId).toBe('submission-123');
     expect(el.readOnly).toBe(true);
-    expect(el.reload).toHaveBeenCalled();
+    expect(el._reloadAfterSubmit).toHaveBeenCalled();
     expect(el._emit).toHaveBeenCalledWith('formio:autoReloadComplete', {
       submission,
       submissionId: 'submission-123',
@@ -2139,7 +2499,7 @@ describe('ChefsFormViewer internals', () => {
     const submission = { id: 'submission-123' };
     el._emitCancelable = vi.fn().mockReturnValue(false);
     el._emit = vi.fn();
-    el.reload = vi.fn();
+    el._reloadAfterSubmit = vi.fn();
 
     await el._handleAutoReload(submission);
 
@@ -2152,7 +2512,7 @@ describe('ChefsFormViewer internals', () => {
       submission,
       submissionId: 'submission-123',
     });
-    expect(el.reload).not.toHaveBeenCalled();
+    expect(el._reloadAfterSubmit).not.toHaveBeenCalled();
   });
 
   it('_handleAutoReload is cancelled when waitUntil returns false', async () => {
@@ -2160,7 +2520,7 @@ describe('ChefsFormViewer internals', () => {
     el._emitCancelable = vi.fn().mockReturnValue(true);
     el._waitUntil = vi.fn().mockResolvedValue(false);
     el._emit = vi.fn();
-    el.reload = vi.fn();
+    el._reloadAfterSubmit = vi.fn();
 
     await el._handleAutoReload(submission);
 
@@ -2173,7 +2533,7 @@ describe('ChefsFormViewer internals', () => {
       submission,
       submissionId: 'submission-123',
     });
-    expect(el.reload).not.toHaveBeenCalled();
+    expect(el._reloadAfterSubmit).not.toHaveBeenCalled();
   });
 
   it('_handleAutoReload handles reload errors gracefully', async () => {
@@ -2183,7 +2543,9 @@ describe('ChefsFormViewer internals', () => {
     el._emit = vi.fn();
     el.submissionId = null;
     el.readOnly = false;
-    el.reload = vi.fn().mockRejectedValue(new Error('Reload failed'));
+    el._reloadAfterSubmit = vi
+      .fn()
+      .mockRejectedValue(new Error('Reload failed'));
 
     // Mock setTimeout to run immediately
     const originalSetTimeout = globalThis.setTimeout;
@@ -2354,53 +2716,64 @@ describe('ChefsFormViewer internals', () => {
     expect(el._loadFontsAndStyles).toHaveBeenCalled();
   });
 
-  it('_loadAssetHints adds resource hints for critical assets', async () => {
+  it('_loadAssetHints preloads critical assets and adds no CDN hints', async () => {
+    delete globalThis.Formio;
     el._addResourceHint = vi.fn();
     el._resolveUrl = vi.fn().mockReturnValue('https://test/asset');
 
     await el._loadAssetHints();
 
     expect(el._addResourceHint).toHaveBeenCalledWith(
-      'preconnect',
-      'https://cdn.jsdelivr.net',
-      { crossOrigin: 'anonymous' }
-    );
-    expect(el._addResourceHint).toHaveBeenCalledWith(
       'preload',
       'https://test/asset',
       { as: 'style' }
     );
+    expect(el._addResourceHint).toHaveBeenCalledWith(
+      'preload',
+      'https://test/asset',
+      { as: 'script' }
+    );
+    for (const [rel] of el._addResourceHint.mock.calls) {
+      expect(rel).toBe('preload');
+    }
   });
 
   it('_loadCssAssets loads critical and optional CSS assets', async () => {
-    el._loadAssetWithFallback = vi.fn().mockResolvedValue(true);
-    el._resolveUrl = vi.fn().mockReturnValue('https://test/css');
-    el._resolveUrlWithFallback = vi.fn().mockReturnValue({
-      primary: 'https://test/icons',
-      fallback: 'https://cdn/icons',
-    });
+    el._loadAsset = vi.fn().mockResolvedValue(true);
+    el._resolveUrl = vi.fn((key) => `https://test/${key}`);
     el.noIcons = false;
     el.themeCss = 'https://test/theme.css';
 
     await el._loadCssAssets();
 
-    expect(el._loadAssetWithFallback).toHaveBeenCalledTimes(3); // main, icons, theme
+    expect(el._loadAsset.mock.calls).toEqual([
+      ['mainCss', 'https://test/mainCss', true, 'critical-css'],
+      ['iconsCss', 'https://test/iconsCss', false, 'icons-css'],
+      ['themeCss', 'https://test/theme.css', false, 'theme-css'],
+    ]);
   });
 
   it('_loadJsAssets loads FormIO and components JS', async () => {
+    const originalValidate = globalThis.FormViewerUtils.validateFormioGlobal;
     globalThis.FormViewerUtils.validateFormioGlobal = vi
       .fn()
       .mockReturnValue({ available: false });
-    el._loadAssetWithFallback = vi.fn().mockResolvedValue(true);
-    el._resolveUrl = vi.fn().mockReturnValue('https://test/js');
-    el._resolveUrlWithFallback = vi.fn().mockReturnValue({
-      primary: 'https://test/formio',
-      fallback: 'https://cdn/formio',
-    });
+    el._loadAsset = vi.fn().mockResolvedValue(true);
+    el._resolveUrl = vi.fn((key) => `https://test/${key}`);
 
     await el._loadJsAssets();
 
-    expect(el._loadAssetWithFallback).toHaveBeenCalledTimes(2); // formio, components
+    expect(el._loadAsset.mock.calls).toEqual([
+      [
+        'formioJs',
+        'https://test/formioJs',
+        true,
+        'formio-js',
+        expect.any(Function),
+      ],
+      ['componentsJs', 'https://test/componentsJs', true, 'components-js'],
+    ]);
+    globalThis.FormViewerUtils.validateFormioGlobal = originalValidate;
   });
 
   it('_loadFontsAndStyles handles icon setup and neutralization', async () => {
@@ -2419,28 +2792,6 @@ describe('ChefsFormViewer internals', () => {
     expect(el._injectGlobalStyle).toHaveBeenCalled();
     expect(el._addResourceHint).toHaveBeenCalled();
     expect(el._injectShadowStyle).toHaveBeenCalled();
-  });
-
-  it('_tryLoadWithFallback attempts primary then fallback URL', async () => {
-    const loadFn = vi
-      .fn()
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
-    const fallbackLoadFn = vi.fn().mockResolvedValue(true);
-    el._getAssetLoadFunction = vi.fn().mockReturnValue(fallbackLoadFn);
-    el._loadedAssets = new Map();
-
-    const result = await el._tryLoadWithFallback(
-      'primary-url',
-      'fallback-url',
-      'test-asset',
-      loadFn
-    );
-
-    expect(loadFn).toHaveBeenCalledWith('primary-url');
-    expect(fallbackLoadFn).toHaveBeenCalledWith('fallback-url');
-    expect(result).toBe(true);
-    expect(el._loadedAssets.get('test-asset-fallback')).toBe('fallback-url');
   });
 
   it('_addResourceHint creates link element with resource hints', () => {
@@ -2925,13 +3276,13 @@ describe('ChefsFormViewer internals', () => {
   // _displayAsReadOnly tests
   it('_displayAsReadOnly sets readOnly and reloads with data', async () => {
     el.readOnly = false;
-    el.reload = vi.fn().mockResolvedValue(undefined);
+    el._reloadAfterSubmit = vi.fn().mockResolvedValue(undefined);
     el.setSubmission = vi.fn();
 
     await el._displayAsReadOnly({ field: 'value' });
 
     expect(el.readOnly).toBe(true);
-    expect(el.reload).toHaveBeenCalled();
+    expect(el._reloadAfterSubmit).toHaveBeenCalled();
     expect(el.setSubmission).toHaveBeenCalledWith({ field: 'value' });
   });
 
@@ -2990,7 +3341,10 @@ describe('ChefsFormViewer internals', () => {
       'https://test/submit',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ submission: { data: { test: 'value' } } }),
+        body: JSON.stringify({
+          submission: { data: { test: 'value' } },
+          draft: false,
+        }),
       })
     );
   });
@@ -3138,7 +3492,7 @@ describe('ChefsFormViewer internals', () => {
   // Additional edge cases for _displayAsReadOnly
   it('_displayAsReadOnly awaits reload before setSubmission', async () => {
     const callOrder = [];
-    el.reload = vi.fn().mockImplementation(async () => {
+    el._reloadAfterSubmit = vi.fn().mockImplementation(async () => {
       callOrder.push('reload');
     });
     el.setSubmission = vi.fn().mockImplementation(() => {

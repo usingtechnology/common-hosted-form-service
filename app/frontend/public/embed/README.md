@@ -45,6 +45,39 @@ These files are the source for future releases. The frontend build does not ship
 - **Use `.min.js` files in production** for better performance and smaller downloads
 - **Custom themes**: Use `chefs-form-viewer-override-template.css` as a starting point. See demo themes (`chefs-form-viewer-theme-dark.css`, `chefs-form-viewer-theme-material.css`) for examples. Use `chefs-form-viewer-theme-demo.html` to test themes.
 
+### Releases
+
+| Release | Contents                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------ |
+| `v1`    | Frozen legacy files at `/app/embed/` and `/app/webcomponents/v1/`. Unchanged.                                |
+| `1.0.0` | v1 behaviour (API key or gateway token) with the fixes below. Loads only its own files, each checked by SRI. |
+
+#### Embedding a release
+
+Load the embed script from the release folder, with its hash from the release's `integrity.json` (`/app/embed/<version>/integrity.json`):
+
+```html
+<script
+  src="https://<chefs-host>/app/embed/1.0.0/embed/chefs-form-viewer-embed.min.js?form-id=<formId>&auth-token=<jwt>"
+  integrity="sha384-qZGPg1SRR08dy4uKklHJM5YqPnwiKfIeWKal675acxmdo6TZgmy0kJ1I2X23OYAM"
+  crossorigin="anonymous"
+></script>
+```
+
+- The embed script loads `chefs-form-viewer.min.js`, Form.io, the CHEFS styles, Font Awesome and the BC Gov components from the same release folder, each with its SRI hash. The CHEFS stylesheet still imports Roboto and Material Icons from Google Fonts, as v1 does.
+- The CHEFS base URL defaults to the server and path the script was loaded from; `base-url` overrides it. Set `base-url` whenever the release files are served from somewhere other than CHEFS, or the component sends its API key or token to that server.
+- To use the component without the embed script, load `embed/chefs-form-viewer.min.js` with its hash from `integrity.json`.
+- A release never changes; moving to another release means changing the version and the hash.
+
+Changes in 1.0.0 from v1:
+
+- `draft()` saves a draft, and only for a form whose settings let submitters save drafts; otherwise it emits `formio:error` and sends nothing. A Public form never allows drafts. v1 stored every draft as a submitted form.
+- The `form-viewer` submit endpoint returns `403` for a draft on a form that does not allow drafts, or on a Public form.
+- `submit()` called from code reloads the form read-only afterwards, as a button submit does. In v1 that reload was skipped.
+- Boolean embed parameters accept `false`, so `auto-reload-on-submit=false` turns auto-reload off.
+- The embed script also works under its `.min.js` name.
+- No CDN fallbacks, and no `HEAD` requests to find an asset's type.
+
 ### Authentication
 
 #### Obtaining a gateway token (server-side only)

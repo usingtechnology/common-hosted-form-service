@@ -54,6 +54,13 @@ module.exports = {
         return;
       }
 
+      // A draft needs a form that allows drafts. A Public form never does: there is no account to return to it.
+      const isPublicForm = form.identityProviders?.some((idp) => idp.code === 'public');
+      if (req.body?.draft && (!form.enableSubmitterDraft || isPublicForm)) {
+        res.status(403).json({ detail: 'This form does not allow saving drafts.' });
+        return;
+      }
+
       // Create the submission
       const response = await service.createSubmission(versionId, req.body, req.currentUser);
 

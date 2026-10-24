@@ -7,6 +7,7 @@ const { RELEASES_DIR, INTEGRITY_FILE, releaseDir, hashRelease } = require('../..
 // sha384 of each release's integrity.json; a release cannot change without editing this list
 const PINNED_INTEGRITY = {
   v1: 'sha384-Rr8+o3qvZIMeaEPizONUw7+/26/hw4LlBY6wNTJYSdDPZ/n7Hp6kp2yBJ5R0dZWa',
+  '1.0.0': 'sha384-G8rgwb5MrQ0kMVCQUVg4zwCzTWFqltXA2ZLvBtF0gMzXPRWZgGFwlUrJhkg53E9h',
 };
 
 const folders = fs
