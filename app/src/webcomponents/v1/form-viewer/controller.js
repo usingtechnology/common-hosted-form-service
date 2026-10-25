@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const service = require('../../../forms/form/service');
 const submissionService = require('../../../forms/submission/service');
+const { formSchemaResponse, submissionResponse } = require('../../common/responses');
 const { releaseDir } = require('../../common/releases');
 
 // Frozen v1 custom components and styles
@@ -25,10 +26,7 @@ module.exports = {
       const response = await service.readPublishedForm(formId, req.query);
 
       // Return the form schema in the format expected by the web component
-      res.status(200).json({
-        form: response,
-        schema: response.versions?.[0]?.schema || response.schema,
-      });
+      res.status(200).json(formSchemaResponse(response));
     } catch (error) {
       next(error);
     }
@@ -93,7 +91,7 @@ module.exports = {
         res.status(404).json({ detail: 'Submission not found' });
         return;
       }
-      res.status(200).json(submission);
+      res.status(200).json(submissionResponse(submission));
     } catch (error) {
       next(error);
     }

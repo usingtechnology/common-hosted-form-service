@@ -1,5 +1,6 @@
 const controller = require('../../../../../src/webcomponents/v1/form-viewer/controller');
 const service = require('../../../../../src/forms/form/service');
+const submissionService = require('../../../../../src/forms/submission/service');
 const { releaseDir } = require('../../../../../src/webcomponents/common/releases');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -32,7 +33,7 @@ describe('webcomponents/v1/form-viewer controller', () => {
 
   describe('readFormSchema success paths', () => {
     it('returns first version schema with 200', async () => {
-      const mockForm = { versions: [{ id: 'ver-1', schema: { display: 'form' } }] };
+      const mockForm = { name: 'Form', versions: [{ id: 'ver-1', schema: { display: 'form' } }] };
       jest.spyOn(service, 'readPublishedForm').mockResolvedValue(mockForm);
       const req = { params: { formId: uuidv4() }, query: {} };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
@@ -40,8 +41,27 @@ describe('webcomponents/v1/form-viewer controller', () => {
       await controller.readFormSchema(req, res, next);
       expect(service.readPublishedForm).toHaveBeenCalledWith(req.params.formId, req.query);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ form: mockForm, schema: mockForm.versions[0].schema });
+      expect(res.json).toHaveBeenCalledWith({ form: { name: 'Form', identityProviders: [] }, schema: mockForm.versions[0].schema });
       expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns only the form fields the web component reads', async () => {
+      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({
+        id: 'form-1',
+        name: 'Form',
+        enableSubmitterDraft: true,
+        submissionReceivedEmails: ['owner@example.com'],
+        createdBy: 'JDOE@idir',
+        identityProviders: [{ code: 'idir', createdBy: 'migration-002' }],
+        versions: [{ id: 'ver-1', createdBy: 'JDOE@idir', schema: { display: 'form' } }],
+      });
+      const req = { params: { formId: uuidv4() }, query: {} };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await controller.readFormSchema(req, res, jest.fn());
+      expect(res.json).toHaveBeenCalledWith({
+        form: { name: 'Form', enableSubmitterDraft: true, identityProviders: [{ code: 'idir' }] },
+        schema: { display: 'form' },
+      });
     });
 
     it('falls back to form.schema when versions missing', async () => {
@@ -52,7 +72,7 @@ describe('webcomponents/v1/form-viewer controller', () => {
       const next = jest.fn();
       await controller.readFormSchema(req, res, next);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ form: mockForm, schema: mockForm.schema });
+      expect(res.json).toHaveBeenCalledWith({ form: { identityProviders: [] }, schema: mockForm.schema });
     });
 
     it('calls next(err) on service error', async () => {
@@ -63,6 +83,21 @@ describe('webcomponents/v1/form-viewer controller', () => {
       const next = jest.fn();
       await controller.readFormSchema(req, res, next);
       expect(next).toHaveBeenCalledWith(boom);
+    });
+  });
+
+  describe('readSubmission', () => {
+    it('returns only the submitted data', async () => {
+      jest.spyOn(submissionService, 'read').mockResolvedValue({
+        submission: { id: 'sub-1', submission: { data: { a: 1 }, metadata: { userAgent: 'x' } }, createdBy: 'JDOE@idir' },
+        version: { id: 'ver-1', createdBy: 'JDOE@idir' },
+        form: { id: 'form-1', createdBy: 'JDOE@idir', submissionReceivedEmails: ['owner@example.com'] },
+      });
+      const req = { params: { formId: uuidv4(), formSubmissionId: uuidv4() } };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await controller.readSubmission(req, res, jest.fn());
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ submission: { submission: { data: { a: 1 } } } });
     });
   });
 

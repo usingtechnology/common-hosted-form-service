@@ -71,6 +71,26 @@ describe('webcomponents/v1/public routes', () => {
       expect(webcomponentSettingsService.readAllowedOrigins).toHaveBeenCalledWith(publicForm);
     });
 
+    it('returns only the form fields the web component reads', async () => {
+      formService.readPublishedForm.mockImplementationOnce(async (formId) => ({
+        id: formId,
+        name: 'Form',
+        showSubmissionConfirmation: true,
+        hideSubmissionContentOnSuccess: true,
+        submissionReceivedEmails: ['owner@example.com'],
+        createdBy: 'JDOE@idir',
+        updatedBy: 'ASMITH@idir',
+        identityProviders: [{ code: 'public', createdBy: 'migration-002' }],
+        versions: [{ id: 'version-1', createdBy: 'JDOE@idir', updatedBy: 'ASMITH@idir', schema }],
+      }));
+      const res = await request(app).get(`/webcomponents/v1/public/${publicForm}/schema`).set('Origin', allowedOrigin);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({
+        form: { name: 'Form', showSubmissionConfirmation: true, hideSubmissionContentOnSuccess: true, identityProviders: [{ code: 'public' }] },
+        schema,
+      });
+    });
+
     it('matches the origin after normalising case and default port', async () => {
       const res = await request(app).get(`/webcomponents/v1/public/${publicForm}/schema`).set('Origin', 'https://WWW.Example.com:443');
       expect(res.statusCode).toBe(200);

@@ -1,6 +1,7 @@
 const Problem = require('api-problem');
 
 const service = require('../../../forms/form/service');
+const { formSchemaResponse } = require('../../common/responses');
 
 module.exports = {
   /**
@@ -10,7 +11,7 @@ module.exports = {
   readFormSchema: async (req, res, next) => {
     try {
       const form = await service.readPublishedForm(req.params.formId);
-      res.status(200).json({ form, schema: form.versions?.[0]?.schema || form.schema });
+      res.status(200).json(formSchemaResponse(form));
     } catch (error) {
       next(error);
     }
