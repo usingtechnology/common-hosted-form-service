@@ -1,6 +1,6 @@
 <script setup>
 import { storeToRefs } from 'pinia';
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import { webcomponentSettingsService } from '~/services';
@@ -12,12 +12,22 @@ const MAX_ALLOWED_ORIGINS = 20;
 const MAX_ORIGIN_LENGTH = 255;
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
+const props = defineProps({
+  // Whether the panel holding the settings is open; they load when it first opens
+  active: { type: Boolean, default: true },
+});
+
 const { t, locale } = useI18n({ useScope: 'global' });
 
 const allowedOrigins = ref([]);
+// The origins as last loaded or saved, to tell whether there is anything to save
+const savedOrigins = ref([]);
 const newOrigin = ref('');
 const originTouched = ref(false);
+const originInput = ref(null);
+const saveButton = ref(null);
 const loading = ref(true);
+let loadStarted = false;
 // Saving after a failed load would replace the saved origins with an incomplete list
 const loadFailed = ref(false);
 const saving = ref(false);
@@ -30,6 +40,11 @@ const isPublicForm = computed(
 );
 const atLimit = computed(
   () => allowedOrigins.value.length >= MAX_ALLOWED_ORIGINS
+);
+const hasChanges = computed(
+  () =>
+    newOrigin.value.trim() !== '' ||
+    allowedOrigins.value.join('\n') !== savedOrigins.value.join('\n')
 );
 
 // Same rules as the API: an https origin, or http on localhost, with no path, query or wildcard
@@ -51,7 +66,10 @@ function normalizeOrigin(value) {
     !url.search &&
     !url.hash &&
     !url.hostname.includes('*');
-  return secure && bare ? url.origin : null;
+  // An international domain name gets longer once converted, so check the result too
+  return secure && bare && url.origin.length <= MAX_ORIGIN_LENGTH
+    ? url.origin
+    : null;
 }
 
 const originError = computed(() => {
@@ -69,23 +87,41 @@ const shownOriginError = computed(() =>
   originTouched.value ? originError.value : ''
 );
 
+// Keep keyboard focus in the panel after the button that had it is disabled or removed.
+// At the limit the field is disabled too, so focus moves to Save.
+async function keepFocus() {
+  await nextTick();
+  if (atLimit.value) saveButton.value?.$el?.focus();
+  else originInput.value?.focus();
+}
+
 function addOrigin() {
   originTouched.value = true;
   const origin = normalizeOrigin(newOrigin.value);
-  if (!origin || originError.value || atLimit.value) return;
+  if (!origin || originError.value || atLimit.value) return false;
   allowedOrigins.value = [...allowedOrigins.value, origin];
   newOrigin.value = '';
   originTouched.value = false;
+  keepFocus();
+  return true;
 }
 
 function removeOrigin(origin) {
   allowedOrigins.value = allowedOrigins.value.filter((o) => o !== origin);
+  keepFocus();
 }
 
-onMounted(async () => {
-  await fetchSettings();
-  loading.value = false;
-});
+// The panel stays mounted while collapsed to keep unsaved edits, so load only once it opens
+watch(
+  () => props.active,
+  async (active) => {
+    if (!active || loadStarted) return;
+    loadStarted = true;
+    await fetchSettings();
+    loading.value = false;
+  },
+  { immediate: true }
+);
 
 async function fetchSettings() {
   try {
@@ -93,6 +129,7 @@ async function fetchSettings() {
       form.value.id
     );
     allowedOrigins.value = response.data?.allowedOrigins || [];
+    savedOrigins.value = [...allowedOrigins.value];
     loadFailed.value = false;
   } catch (e) {
     loadFailed.value = true;
@@ -106,6 +143,11 @@ async function fetchSettings() {
 }
 
 async function handleSave() {
+  // An unfinished or failed load would replace the saved origins with an incomplete list
+  if (loading.value || loadFailed.value) return;
+  // An origin left in the field is saved too; text that is not a valid origin stops the save
+  if (newOrigin.value.trim() && !addOrigin()) return;
+
   saving.value = true;
   try {
     const response =
@@ -114,13 +156,22 @@ async function handleSave() {
         { allowedOrigins: allowedOrigins.value }
       );
     allowedOrigins.value = response.data?.allowedOrigins || [];
+    savedOrigins.value = [...allowedOrigins.value];
     notificationStore.addNotification({
       text: t('trans.webcomponentSettings.saveSuccess'),
       ...NotificationTypes.SUCCESS,
     });
   } catch (e) {
+    // The API names the entries it refused
+    const refused = [
+      ...(e.response?.data?.invalidOrigins || []),
+      ...(e.response?.data?.duplicateOrigins || []),
+    ];
+    const text = refused.length
+      ? `${t('trans.webcomponentSettings.saveError')}: ${refused.join(', ')}`
+      : t('trans.webcomponentSettings.saveError');
     notificationStore.addNotification({
-      text: t('trans.webcomponentSettings.saveError'),
+      text,
       consoleError: `${t('trans.webcomponentSettings.saveError')}: ${
         e.message
       }`,
@@ -188,18 +239,20 @@ async function handleSave() {
         </template>
       </v-list-item>
     </v-list>
-    <div v-else class="text-medium-emphasis mb-2" :lang="locale">
+    <div v-else-if="!loading" class="text-medium-emphasis mb-2" :lang="locale">
       {{ $t('trans.webcomponentSettings.noOrigins') }}
     </div>
 
     <div class="d-flex align-start">
       <v-text-field
+        ref="originInput"
         v-model="newOrigin"
         :label="$t('trans.webcomponentSettings.originLabel')"
         :hint="$t('trans.webcomponentSettings.originHint')"
         placeholder="https://www.example.com"
         :error-messages="shownOriginError"
-        :disabled="atLimit || loadFailed"
+        :disabled="atLimit || loadFailed || loading"
+        :loading="loading"
         :maxlength="MAX_ORIGIN_LENGTH"
         persistent-hint
         variant="outlined"
@@ -210,10 +263,12 @@ async function handleSave() {
         @keydown.enter.prevent="addOrigin"
       />
       <v-btn
-        class="ml-2"
+        :class="isRTL ? 'mr-2' : 'ml-2'"
         color="primary"
         variant="outlined"
-        :disabled="!newOrigin || !!originError || atLimit || loadFailed"
+        :disabled="
+          !newOrigin || !!originError || atLimit || loadFailed || loading
+        "
         :title="$t('trans.webcomponentSettings.add')"
         data-test="addOrigin"
         @click="addOrigin"
@@ -231,9 +286,10 @@ async function handleSave() {
 
     <div class="mt-4">
       <v-btn
+        ref="saveButton"
         color="primary"
         :loading="saving"
-        :disabled="saving || loading || loadFailed"
+        :disabled="saving || loading || loadFailed || !hasChanges"
         :title="$t('trans.webcomponentSettings.save')"
         data-test="saveWebcomponentSettings"
         @click="handleSave"

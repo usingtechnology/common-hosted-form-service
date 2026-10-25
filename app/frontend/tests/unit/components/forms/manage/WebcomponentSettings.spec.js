@@ -9,6 +9,8 @@ import { useFormStore } from '~/store/form';
 import { useNotificationStore } from '~/store/notification';
 import { IdentityMode, NotificationTypes } from '~/utils/constants';
 
+const focusSpy = vi.fn();
+
 const STUBS = {
   VAlert: {
     template: '<div class="v-alert-stub"><slot /></div>',
@@ -22,6 +24,7 @@ const STUBS = {
   },
   VTextField: {
     template: '<div class="v-text-field-stub" />',
+    methods: { focus: () => focusSpy() },
   },
   VBtn: {
     template: '<div class="v-btn-stub"><slot /></div>',
@@ -45,8 +48,9 @@ describe('WebcomponentSettings.vue', () => {
     'upsertWebcomponentSettings'
   );
 
-  const mountComponent = async () => {
+  const mountComponent = async (props = {}) => {
     const wrapper = mount(WebcomponentSettings, {
+      props,
       global: { plugins: [pinia], stubs: STUBS },
     });
     await flushPromises();
@@ -59,6 +63,7 @@ describe('WebcomponentSettings.vue', () => {
     addNotificationSpy.mockReset();
     readSpy.mockReset();
     upsertSpy.mockReset();
+    focusSpy.mockReset();
     formStore.form = {
       id: 'test-form-id',
       name: 'Test Form',
@@ -104,9 +109,11 @@ describe('WebcomponentSettings.vue', () => {
 
     wrapper.vm.newOrigin = '  https://WWW.Example.com:443/ ';
     wrapper.vm.addOrigin();
+    await flushPromises();
 
     expect(wrapper.vm.allowedOrigins).toEqual(['https://www.example.com']);
     expect(wrapper.vm.newOrigin).toBe('');
+    expect(focusSpy).toHaveBeenCalled();
   });
 
   it.each([
@@ -239,5 +246,148 @@ describe('WebcomponentSettings.vue', () => {
     );
     expect(wrapper.vm.loadFailed).toBe(true);
     expect(wrapper.find('[data-test="loadFailed"]').exists()).toBe(true);
+
+    wrapper.vm.newOrigin = 'https://www.example.com';
+    await wrapper.vm.handleSave();
+    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it('saves an origin left in the field without pressing Add', async () => {
+    upsertSpy.mockResolvedValue({
+      data: { allowedOrigins: ['https://www.example.com'] },
+    });
+    const wrapper = await mountComponent();
+
+    wrapper.vm.newOrigin = 'https://www.example.com';
+    await wrapper.vm.handleSave();
+
+    expect(upsertSpy).toHaveBeenCalledWith('test-form-id', {
+      allowedOrigins: ['https://www.example.com'],
+    });
+    expect(wrapper.vm.newOrigin).toBe('');
+  });
+
+  it('does not save while the field holds text that is not a valid origin', async () => {
+    const wrapper = await mountComponent();
+
+    wrapper.vm.newOrigin = 'https://www.example.com/path';
+    await wrapper.vm.handleSave();
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+    expect(wrapper.vm.shownOriginError).toBe(
+      'trans.webcomponentSettings.invalidOrigin'
+    );
+  });
+
+  it('only has changes to save after an edit, until it is saved', async () => {
+    upsertSpy.mockResolvedValue({
+      data: { allowedOrigins: ['https://www.example.com'] },
+    });
+    const wrapper = await mountComponent();
+    expect(wrapper.vm.hasChanges).toBe(false);
+
+    wrapper.vm.newOrigin = 'https://www.example.com';
+    expect(wrapper.vm.hasChanges).toBe(true);
+    wrapper.vm.addOrigin();
+    expect(wrapper.vm.hasChanges).toBe(true);
+
+    await wrapper.vm.handleSave();
+    expect(wrapper.vm.hasChanges).toBe(false);
+  });
+
+  it('names the origins the server refused', async () => {
+    upsertSpy.mockRejectedValue(
+      Object.assign(new Error('422'), {
+        response: {
+          data: {
+            invalidOrigins: ['https://bad.example.com'],
+            duplicateOrigins: ['https://dup.example.com'],
+          },
+        },
+      })
+    );
+    const wrapper = await mountComponent();
+    wrapper.vm.allowedOrigins = ['https://bad.example.com'];
+
+    await wrapper.vm.handleSave();
+
+    expect(addNotificationSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'trans.webcomponentSettings.saveError: https://bad.example.com, https://dup.example.com',
+      })
+    );
+  });
+
+  it('loads the settings only once the panel first opens', async () => {
+    const wrapper = await mountComponent({ active: false });
+    expect(readSpy).not.toHaveBeenCalled();
+
+    await wrapper.setProps({ active: true });
+    await flushPromises();
+    expect(readSpy).toHaveBeenCalledTimes(1);
+
+    await wrapper.setProps({ active: false });
+    await wrapper.setProps({ active: true });
+    await flushPromises();
+    expect(readSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not save while the settings are still loading', async () => {
+    readSpy.mockReturnValue(new Promise(() => {}));
+    const wrapper = await mountComponent();
+
+    wrapper.vm.allowedOrigins = ['https://www.example.com'];
+    await wrapper.vm.handleSave();
+
+    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to the field after removing an origin', async () => {
+    readSpy.mockResolvedValue({
+      data: { allowedOrigins: ['https://a.example.com'] },
+    });
+    const wrapper = await mountComponent();
+
+    wrapper.vm.removeOrigin('https://a.example.com');
+    await flushPromises();
+
+    expect(focusSpy).toHaveBeenCalled();
+  });
+
+  it('moves focus to Save when the last allowed origin is added', async () => {
+    const allowedOrigins = Array.from(
+      { length: 19 },
+      (_v, i) => `https://site${i}.example.com`
+    );
+    readSpy.mockResolvedValue({ data: { allowedOrigins } });
+    const wrapper = await mountComponent();
+    const saveFocus = vi.spyOn(
+      wrapper.find('[data-test="saveWebcomponentSettings"]').element,
+      'focus'
+    );
+
+    wrapper.vm.newOrigin = 'https://last.example.com';
+    wrapper.vm.addOrigin();
+    await flushPromises();
+
+    expect(wrapper.vm.atLimit).toBe(true);
+    expect(saveFocus).toHaveBeenCalled();
+    expect(focusSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not add an international origin that is too long once converted', async () => {
+    const host = Array.from({ length: 125 }, (_v, i) =>
+      String.fromCodePoint(0x4e00 + i * 7)
+    ).join('');
+    const wrapper = await mountComponent();
+
+    wrapper.vm.newOrigin = `https://${host}.ca`;
+    expect(wrapper.vm.newOrigin.length).toBeLessThanOrEqual(255);
+    wrapper.vm.addOrigin();
+
+    expect(wrapper.vm.allowedOrigins).toEqual([]);
+    expect(wrapper.vm.originError).toBe(
+      'trans.webcomponentSettings.invalidOrigin'
+    );
   });
 });

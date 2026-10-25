@@ -362,8 +362,9 @@ defineExpose({
             <strong>{{ $t('trans.manageForm.webcomponentSettings') }}</strong>
           </div>
         </v-expansion-panel-title>
-        <v-expansion-panel-text>
-          <WebcomponentSettings />
+        <!-- eager keeps added but unsaved origins when the panel is collapsed -->
+        <v-expansion-panel-text eager>
+          <WebcomponentSettings :active="webcomponentSettingsPanel === 0" />
         </v-expansion-panel-text>
       </v-expansion-panel>
     </v-expansion-panels>

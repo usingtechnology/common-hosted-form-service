@@ -1411,7 +1411,7 @@
     "allowedOrigins": "Origens permitidas",
     "noOrigins": "Nenhuma origem adicionada. Este formulário não pode ser incorporado sem uma chave de API.",
     "originLabel": "Origem",
-    "originHint": "Por exemplo, https://www.example.com. Use https, ou http apenas para localhost.",
+    "originHint": "Por exemplo, https://www.example.com. O site deve usar https.",
     "invalidOrigin": "Insira uma origem como https://www.example.com, sem caminho.",
     "duplicateOrigin": "Esta origem já está na lista.",
     "maxOrigins": "Você pode adicionar até {max} origens.",

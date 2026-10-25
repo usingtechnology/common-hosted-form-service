@@ -1411,7 +1411,7 @@
     "allowedOrigins": "مبداهای مجاز",
     "noOrigins": "هیچ مبدایی اضافه نشده است. این فرم را نمی‌توان بدون کلید API جاسازی کرد.",
     "originLabel": "مبدا",
-    "originHint": "برای مثال https://www.example.com. از https استفاده کنید، یا http فقط برای localhost.",
+    "originHint": "برای مثال https://www.example.com. وب‌سایت باید از https استفاده کند.",
     "invalidOrigin": "مبدایی مانند https://www.example.com را بدون مسیر وارد کنید.",
     "duplicateOrigin": "این مبدا از قبل در فهرست است.",
     "maxOrigins": "حداکثر می‌توانید {max} مبدا اضافه کنید.",

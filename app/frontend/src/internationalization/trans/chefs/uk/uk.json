@@ -1411,7 +1411,7 @@
     "allowedOrigins": "Дозволені джерела",
     "noOrigins": "Джерела не додано. Цю форму не можна вбудувати без ключа API.",
     "originLabel": "Джерело",
-    "originHint": "Наприклад, https://www.example.com. Використовуйте https, а http — лише для localhost.",
+    "originHint": "Наприклад, https://www.example.com. Сайт має використовувати https.",
     "invalidOrigin": "Введіть джерело, наприклад https://www.example.com, без шляху.",
     "duplicateOrigin": "Це джерело вже є у списку.",
     "maxOrigins": "Можна додати не більше {max} джерел.",

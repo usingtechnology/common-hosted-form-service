@@ -1411,7 +1411,7 @@
     "allowedOrigins": "المصادر المسموح بها",
     "noOrigins": "لم تتم إضافة أي مصادر. لا يمكن تضمين هذا النموذج دون مفتاح API.",
     "originLabel": "المصدر",
-    "originHint": "مثال: https://www.example.com. استخدم https، أو http لـ localhost فقط.",
+    "originHint": "مثال: https://www.example.com. يجب أن يستخدم الموقع https.",
     "invalidOrigin": "أدخل مصدرًا مثل https://www.example.com بدون مسار.",
     "duplicateOrigin": "هذا المصدر موجود بالفعل في القائمة.",
     "maxOrigins": "يمكنك إضافة ما يصل إلى {max} مصدرًا.",

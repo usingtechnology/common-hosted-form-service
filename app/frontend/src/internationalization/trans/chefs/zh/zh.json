@@ -1411,7 +1411,7 @@
     "allowedOrigins": "允许的来源",
     "noOrigins": "尚未添加来源。没有 API 密钥无法嵌入此表单。",
     "originLabel": "来源",
-    "originHint": "例如 https://www.example.com。请使用 https，仅 localhost 可使用 http。",
+    "originHint": "例如 https://www.example.com。网站必须使用 https。",
     "invalidOrigin": "请输入不含路径的来源，例如 https://www.example.com。",
     "duplicateOrigin": "此来源已在列表中。",
     "maxOrigins": "最多可以添加 {max} 个来源。",

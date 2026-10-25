@@ -1411,7 +1411,7 @@
     "allowedOrigins": "許可されたオリジン",
     "noOrigins": "オリジンが追加されていません。このフォームは API キーなしでは埋め込めません。",
     "originLabel": "オリジン",
-    "originHint": "例: https://www.example.com。https を使用してください。http は localhost の場合のみ使用できます。",
+    "originHint": "例: https://www.example.com。Web サイトは https を使用する必要があります。",
     "invalidOrigin": "https://www.example.com のようなオリジンをパスなしで入力してください。",
     "duplicateOrigin": "このオリジンはすでにリストにあります。",
     "maxOrigins": "オリジンは最大 {max} 件まで追加できます。",

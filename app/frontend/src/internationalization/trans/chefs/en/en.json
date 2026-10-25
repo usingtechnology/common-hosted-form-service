@@ -248,7 +248,7 @@
     "allowedOrigins": "Allowed origins",
     "noOrigins": "No origins added. This form cannot be embedded without an API key.",
     "originLabel": "Origin",
-    "originHint": "For example https://www.example.com. Use https, or http only for localhost.",
+    "originHint": "For example https://www.example.com. The website must use https.",
     "invalidOrigin": "Enter an origin such as https://www.example.com, without a path.",
     "duplicateOrigin": "This origin is already in the list.",
     "maxOrigins": "You can add up to {max} origins.",

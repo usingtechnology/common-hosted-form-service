@@ -1411,7 +1411,7 @@
     "allowedOrigins": "ਮਨਜ਼ੂਰ ਓਰੀਜਿਨ",
     "noOrigins": "ਕੋਈ ਓਰੀਜਿਨ ਸ਼ਾਮਲ ਨਹੀਂ ਕੀਤਾ ਗਿਆ। ਇਸ ਫ਼ਾਰਮ ਨੂੰ API ਕੁੰਜੀ ਤੋਂ ਬਿਨਾਂ ਐਮਬੈੱਡ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ।",
     "originLabel": "ਓਰੀਜਿਨ",
-    "originHint": "ਉਦਾਹਰਨ: https://www.example.com। https ਵਰਤੋ, ਜਾਂ http ਸਿਰਫ਼ localhost ਲਈ।",
+    "originHint": "ਉਦਾਹਰਨ: https://www.example.com। ਵੈੱਬਸਾਈਟ ਨੂੰ https ਵਰਤਣਾ ਲਾਜ਼ਮੀ ਹੈ।",
     "invalidOrigin": "https://www.example.com ਵਰਗਾ ਓਰੀਜਿਨ ਬਿਨਾਂ ਪਾਥ ਦੇ ਦਾਖਲ ਕਰੋ।",
     "duplicateOrigin": "ਇਹ ਓਰੀਜਿਨ ਪਹਿਲਾਂ ਹੀ ਸੂਚੀ ਵਿੱਚ ਹੈ।",
     "maxOrigins": "ਤੁਸੀਂ ਵੱਧ ਤੋਂ ਵੱਧ {max} ਓਰੀਜਿਨ ਸ਼ਾਮਲ ਕਰ ਸਕਦੇ ਹੋ।",

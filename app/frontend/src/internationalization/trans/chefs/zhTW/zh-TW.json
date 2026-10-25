@@ -1411,7 +1411,7 @@
     "allowedOrigins": "允許的來源",
     "noOrigins": "尚未新增來源。沒有 API 金鑰就無法嵌入此表單。",
     "originLabel": "來源",
-    "originHint": "例如 https://www.example.com。請使用 https，僅 localhost 可使用 http。",
+    "originHint": "例如 https://www.example.com。網站必須使用 https。",
     "invalidOrigin": "請輸入不含路徑的來源，例如 https://www.example.com。",
     "duplicateOrigin": "此來源已在清單中。",
     "maxOrigins": "最多可新增 {max} 個來源。",

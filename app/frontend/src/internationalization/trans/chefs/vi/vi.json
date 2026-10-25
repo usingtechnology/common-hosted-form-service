@@ -1409,7 +1409,7 @@
     "allowedOrigins": "Nguồn gốc được phép",
     "noOrigins": "Chưa thêm nguồn gốc nào. Không thể nhúng biểu mẫu này mà không có khóa API.",
     "originLabel": "Nguồn gốc",
-    "originHint": "Ví dụ https://www.example.com. Dùng https, hoặc chỉ dùng http cho localhost.",
+    "originHint": "Ví dụ https://www.example.com. Trang web phải dùng https.",
     "invalidOrigin": "Nhập một nguồn gốc như https://www.example.com, không có đường dẫn.",
     "duplicateOrigin": "Nguồn gốc này đã có trong danh sách.",
     "maxOrigins": "Bạn có thể thêm tối đa {max} nguồn gốc.",

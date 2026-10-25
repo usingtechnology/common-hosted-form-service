@@ -1411,7 +1411,7 @@
     "allowedOrigins": "Zulässige Ursprünge",
     "noOrigins": "Keine Ursprünge hinzugefügt. Dieses Formular kann nicht ohne API-Schlüssel eingebettet werden.",
     "originLabel": "Ursprung",
-    "originHint": "Zum Beispiel https://www.example.com. Verwenden Sie https oder http nur für localhost.",
+    "originHint": "Zum Beispiel https://www.example.com. Die Website muss https verwenden.",
     "invalidOrigin": "Geben Sie einen Ursprung wie https://www.example.com ohne Pfad ein.",
     "duplicateOrigin": "Dieser Ursprung ist bereits in der Liste.",
     "maxOrigins": "Sie können bis zu {max} Ursprünge hinzufügen.",

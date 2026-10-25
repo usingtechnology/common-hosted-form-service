@@ -1,4 +1,5 @@
 const Problem = require('api-problem');
+const { UniqueViolationError } = require('objection');
 const uuid = require('uuid');
 const { FormWebcomponentSettings } = require('../../common/models');
 
@@ -8,20 +9,16 @@ const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 // Query helpers - extracted for easier mocking in tests
 const queryHelpers = {
-  findSettingsByFormId: async (formId, trx) => {
-    return await FormWebcomponentSettings.query(trx).modify('filterFormId', formId).first();
+  findSettingsByFormId: async (formId) => {
+    return await FormWebcomponentSettings.query().modify('filterFormId', formId).first();
   },
 
-  startTransaction: async () => {
-    return await FormWebcomponentSettings.startTransaction();
+  updateSettings: async (id, data) => {
+    return await FormWebcomponentSettings.query().findById(id).patch(data);
   },
 
-  updateSettings: async (id, data, trx) => {
-    return await FormWebcomponentSettings.query(trx).findById(id).patch(data);
-  },
-
-  createSettings: async (data, trx) => {
-    return await FormWebcomponentSettings.query(trx).insert(data);
+  createSettings: async (data) => {
+    return await FormWebcomponentSettings.query().insert(data);
   },
 };
 
@@ -44,7 +41,8 @@ function normalizeOrigin(value) {
   const secure = url.protocol === 'https:' || (url.protocol === 'http:' && LOCAL_HOSTNAMES.has(url.hostname));
   // An origin has no credentials, path, query, fragment or wildcard
   const bare = !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash && !url.hostname.includes('*');
-  return secure && bare ? url.origin : null;
+  // An international domain name gets longer once converted, so check the result too
+  return secure && bare && url.origin.length <= MAX_ORIGIN_LENGTH ? url.origin : null;
 }
 
 const service = {
@@ -84,24 +82,23 @@ const service = {
     return result?.allowedOrigins || [];
   },
 
+  // One row per form, so each write is a single statement and needs no transaction
   upsert: async (formId, data, currentUser) => {
     const allowedOrigins = service.validateSettings(data);
+    const update = { allowedOrigins, updatedBy: currentUser.usernameIdp };
 
-    let trx;
-    try {
-      trx = await queryHelpers.startTransaction();
-
-      const existing = await queryHelpers.findSettingsByFormId(formId, trx);
-      if (existing) {
-        await queryHelpers.updateSettings(existing.id, { allowedOrigins, updatedBy: currentUser.usernameIdp }, trx);
-      } else {
-        await queryHelpers.createSettings({ id: uuid.v4(), formId, allowedOrigins, createdBy: currentUser.usernameIdp }, trx);
+    const existing = await queryHelpers.findSettingsByFormId(formId);
+    if (existing) {
+      await queryHelpers.updateSettings(existing.id, update);
+    } else {
+      try {
+        await queryHelpers.createSettings({ id: uuid.v4(), formId, allowedOrigins, createdBy: currentUser.usernameIdp });
+      } catch (err) {
+        // Another save created the row after the read above; this save then updates it
+        if (!(err instanceof UniqueViolationError)) throw err;
+        const created = await queryHelpers.findSettingsByFormId(formId);
+        await queryHelpers.updateSettings(created.id, update);
       }
-
-      await trx.commit();
-    } catch (err) {
-      if (trx) await trx.rollback();
-      throw err;
     }
 
     return await queryHelpers.findSettingsByFormId(formId);

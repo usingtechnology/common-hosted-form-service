@@ -774,7 +774,16 @@ paths:
         origin must be an https origin such as `https://www.example.com`, or an
         http origin on `localhost`, `127.0.0.1` or `[::1]`, with no path,
         query or wildcard. Origins are stored lowercase without a default
-        port. At most 20 origins are allowed and duplicates are rejected.
+        port, and international domain names in their ASCII (punycode) form;
+        an origin longer than 255 characters in that form is rejected. At most
+        20 origins are allowed and duplicates are rejected. Any of these
+        returns 422; when particular entries are at fault, the response lists
+        them in `invalidOrigins` or `duplicateOrigins`.
+
+
+        The list controls which websites a browser lets embed the form. It is
+        not access control: a script or server can send any `Origin`, and a
+        Public form can be submitted anonymously through CHEFS itself.
       operationId: upsertWebcomponentSettings
       security:
         - BearerAuth: []

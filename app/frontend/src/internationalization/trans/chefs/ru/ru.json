@@ -1411,7 +1411,7 @@
     "allowedOrigins": "Разрешённые источники",
     "noOrigins": "Источники не добавлены. Эту форму нельзя встроить без ключа API.",
     "originLabel": "Источник",
-    "originHint": "Например, https://www.example.com. Используйте https, а http — только для localhost.",
+    "originHint": "Например, https://www.example.com. Сайт должен использовать https.",
     "invalidOrigin": "Введите источник, например https://www.example.com, без пути.",
     "duplicateOrigin": "Этот источник уже есть в списке.",
     "maxOrigins": "Можно добавить не более {max} источников.",

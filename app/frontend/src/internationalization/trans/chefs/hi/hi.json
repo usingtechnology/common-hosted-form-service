@@ -1411,7 +1411,7 @@
     "allowedOrigins": "अनुमत ओरिजिन",
     "noOrigins": "कोई ओरिजिन नहीं जोड़ा गया। इस फ़ॉर्म को API कुंजी के बिना एम्बेड नहीं किया जा सकता।",
     "originLabel": "ओरिजिन",
-    "originHint": "उदाहरण: https://www.example.com। https का उपयोग करें, या http केवल localhost के लिए।",
+    "originHint": "उदाहरण: https://www.example.com। वेबसाइट को https का उपयोग करना होगा।",
     "invalidOrigin": "https://www.example.com जैसा ओरिजिन बिना पाथ के दर्ज करें।",
     "duplicateOrigin": "यह ओरिजिन पहले से सूची में है।",
     "maxOrigins": "आप अधिकतम {max} ओरिजिन जोड़ सकते हैं।",

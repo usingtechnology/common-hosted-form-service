@@ -1,3 +1,4 @@
+const { UniqueViolationError } = require('objection');
 const uuid = require('uuid');
 
 const service = require('../../../../../src/forms/form/webcomponentSettings/service');
@@ -40,6 +41,13 @@ describe('webcomponentSettings service', () => {
       42,
       `https://${'a'.repeat(250)}.com`,
     ])('rejects %p', (value) => {
+      expect(service.normalizeOrigin(value)).toBeNull();
+    });
+
+    it('rejects an international origin that is too long once converted', () => {
+      const host = Array.from({ length: 125 }, (_v, i) => String.fromCodePoint(0x4e00 + i * 7)).join('');
+      const value = `https://${host}.ca`;
+      expect(value.length).toBeLessThanOrEqual(255);
       expect(service.normalizeOrigin(value)).toBeNull();
     });
   });
@@ -101,11 +109,7 @@ describe('webcomponentSettings service', () => {
   });
 
   describe('upsert', () => {
-    let trx;
-
     beforeEach(() => {
-      trx = { commit: jest.fn(), rollback: jest.fn() };
-      jest.spyOn(queryHelpers, 'startTransaction').mockResolvedValue(trx);
       jest.spyOn(queryHelpers, 'updateSettings').mockResolvedValue(1);
       jest.spyOn(queryHelpers, 'createSettings').mockResolvedValue({});
     });
@@ -117,11 +121,9 @@ describe('webcomponentSettings service', () => {
       const result = await service.upsert(formId, { allowedOrigins: ['https://WWW.example.com'] }, currentUser);
 
       expect(queryHelpers.createSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ formId, allowedOrigins: ['https://www.example.com'], createdBy: currentUser.usernameIdp }),
-        trx
+        expect.objectContaining({ formId, allowedOrigins: ['https://www.example.com'], createdBy: currentUser.usernameIdp })
       );
       expect(queryHelpers.updateSettings).not.toHaveBeenCalled();
-      expect(trx.commit).toHaveBeenCalled();
       expect(result).toEqual(saved);
     });
 
@@ -131,23 +133,37 @@ describe('webcomponentSettings service', () => {
 
       await service.upsert(formId, { allowedOrigins: ['https://www.example.com'] }, currentUser);
 
-      expect(queryHelpers.updateSettings).toHaveBeenCalledWith(existing.id, { allowedOrigins: ['https://www.example.com'], updatedBy: currentUser.usernameIdp }, trx);
+      expect(queryHelpers.updateSettings).toHaveBeenCalledWith(existing.id, { allowedOrigins: ['https://www.example.com'], updatedBy: currentUser.usernameIdp });
       expect(queryHelpers.createSettings).not.toHaveBeenCalled();
-      expect(trx.commit).toHaveBeenCalled();
     });
 
-    it('rejects invalid settings before starting a transaction', async () => {
+    it('updates the row another save created first', async () => {
+      const created = { id: uuid.v4(), formId, allowedOrigins: ['https://first.example.com'] };
+      const saved = { ...created, allowedOrigins: ['https://www.example.com'] };
+      jest.spyOn(queryHelpers, 'findSettingsByFormId').mockResolvedValueOnce(undefined).mockResolvedValueOnce(created).mockResolvedValueOnce(saved);
+      queryHelpers.createSettings.mockRejectedValueOnce(
+        new UniqueViolationError({ nativeError: new Error('duplicate key'), client: 'postgres', table: 'form_webcomponent_settings', columns: ['formId'] })
+      );
+
+      const result = await service.upsert(formId, { allowedOrigins: ['https://www.example.com'] }, currentUser);
+
+      expect(queryHelpers.updateSettings).toHaveBeenCalledWith(created.id, { allowedOrigins: ['https://www.example.com'], updatedBy: currentUser.usernameIdp });
+      expect(result).toEqual(saved);
+    });
+
+    it('rejects invalid settings before reading or writing', async () => {
+      jest.spyOn(queryHelpers, 'findSettingsByFormId');
       await expect(service.upsert(formId, { allowedOrigins: ['http://www.example.com'] }, currentUser)).rejects.toThrow(expect.objectContaining({ status: 422 }));
-      expect(queryHelpers.startTransaction).not.toHaveBeenCalled();
+      expect(queryHelpers.findSettingsByFormId).not.toHaveBeenCalled();
+      expect(queryHelpers.createSettings).not.toHaveBeenCalled();
     });
 
-    it('rolls back when saving fails', async () => {
+    it('passes on other database errors', async () => {
       jest.spyOn(queryHelpers, 'findSettingsByFormId').mockResolvedValue(undefined);
       queryHelpers.createSettings.mockRejectedValueOnce(new Error('db down'));
 
       await expect(service.upsert(formId, { allowedOrigins: [] }, currentUser)).rejects.toThrow('db down');
-      expect(trx.rollback).toHaveBeenCalled();
-      expect(trx.commit).not.toHaveBeenCalled();
+      expect(queryHelpers.updateSettings).not.toHaveBeenCalled();
     });
   });
 });
