@@ -337,7 +337,7 @@ const findFileIds = (submissionData) => {
 // The stack entries for an object's or array's children, last to first, so they come off the stack in order
 const fileSearchEntries = (value) => {
   const entries = Array.isArray(value) ? value.map((item) => [null, item]) : Object.entries(value);
-  return entries.reverse().map(([key, child]) => (key === 'data' && child?.id ? { fileId: child.id } : { value: child }));
+  return entries.toReversed().map(([key, child]) => (key === 'data' && child?.id ? { fileId: child.id } : { value: child }));
 };
 
 module.exports = {
