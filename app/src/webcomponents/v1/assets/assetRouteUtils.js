@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const log = require('../../../components/log')(module.filename);
 const { releaseDir } = require('../../common/releases');
 
 // Frozen v1 assets
@@ -19,7 +20,17 @@ function trySend(res, filePath, contentType) {
   if (fs.existsSync(filePath)) {
     if (contentType) res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    fs.createReadStream(filePath).pipe(res);
+    const stream = fs.createReadStream(filePath);
+    // Without a listener a read error (e.g. too many open files) would crash the process
+    stream.on('error', (err) => {
+      log.error(`Web component asset could not be read: ${err.code || err.name}`);
+      if (res.headersSent) return res.destroy();
+      // Never cache or type the error as the asset
+      res.removeHeader('Content-Type');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(500).json({ detail: 'Asset could not be read' });
+    });
+    stream.pipe(res);
     return true;
   }
   return false;

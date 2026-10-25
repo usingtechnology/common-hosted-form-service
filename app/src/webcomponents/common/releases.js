@@ -22,6 +22,8 @@ function listFiles(dir, prefix = '') {
     .filter((entry) => !entry.name.startsWith('.'))
     .flatMap((entry) => {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      // A link would be hashed and served as whatever it points at, outside the release
+      if (entry.isSymbolicLink()) throw new Error(`Release files must not be links: ${rel}`);
       return entry.isDirectory() ? listFiles(path.join(dir, entry.name), rel) : [rel];
     });
 }

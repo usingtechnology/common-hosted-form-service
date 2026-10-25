@@ -14,11 +14,12 @@ describe('assetRouteUtils', () => {
     jest.resetAllMocks();
     mockRes = {
       setHeader: jest.fn(),
+      removeHeader: jest.fn(),
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
     };
     mockNext = jest.fn();
-    mockStream = { pipe: jest.fn() };
+    mockStream = { pipe: jest.fn(), on: jest.fn() };
   });
 
   describe('assetsDir', () => {
@@ -66,6 +67,33 @@ describe('assetRouteUtils', () => {
       expect(fs.existsSync).toHaveBeenCalledWith(filePath);
       expect(mockRes.setHeader).not.toHaveBeenCalled();
       expect(fs.createReadStream).not.toHaveBeenCalled();
+    });
+
+    it('answers a read error with an uncacheable 500 instead of crashing', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.createReadStream.mockReturnValue(mockStream);
+
+      trySend(mockRes, '/test/file.css', 'text/css');
+      const onError = mockStream.on.mock.calls.find(([event]) => event === 'error')[1];
+      onError(Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }));
+
+      expect(mockRes.removeHeader).toHaveBeenCalledWith('Content-Type');
+      expect(mockRes.setHeader).toHaveBeenLastCalledWith('Cache-Control', 'no-store');
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({ detail: 'Asset could not be read' });
+    });
+
+    it('closes the response when a read error happens mid-stream', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.createReadStream.mockReturnValue(mockStream);
+      mockRes.headersSent = true;
+      mockRes.destroy = jest.fn();
+
+      trySend(mockRes, '/test/file.css', 'text/css');
+      mockStream.on.mock.calls.find(([event]) => event === 'error')[1](new Error('EIO'));
+
+      expect(mockRes.destroy).toHaveBeenCalled();
+      expect(mockRes.status).not.toHaveBeenCalled();
     });
   });
 

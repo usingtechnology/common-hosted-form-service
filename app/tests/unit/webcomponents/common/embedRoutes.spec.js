@@ -92,7 +92,28 @@ describe('webcomponents embed routes', () => {
       const res = await request(app).get('/app/embed/1.1.0/embed/chefs-form-viewer.min.js');
       expect(res.statusCode).toBe(500);
       expect(res.headers['access-control-allow-origin']).toBe('*');
+      expect(res.headers['cache-control']).toBe('no-store');
       expect(res.body).toEqual({ detail: 'Release file could not be read' });
+    });
+
+    it('answers a range past the end with 416 and an uncacheable body', async () => {
+      const res = await request(app).get('/app/embed/1.1.0/embed/chefs-form-viewer.min.js').set('Range', 'bytes=99999999-');
+      expect(res.statusCode).toBe(416);
+      expect(res.headers['content-range']).toBe('bytes */22');
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['content-type']).toMatch(/application\/json/);
+      expect(res.headers['access-control-allow-origin']).toBe('*');
+      expect(res.body).toEqual({ detail: 'Range Not Satisfiable' });
+    });
+
+    it.each([
+      ['If-Match', '"not-this-file"'],
+      ['If-Unmodified-Since', 'Mon, 01 Jan 2001 00:00:00 GMT'],
+    ])('answers a failed %s with 412 and an uncacheable body', async (header, value) => {
+      const res = await request(app).get('/app/embed/1.1.0/embed/chefs-form-viewer.min.js').set(header, value);
+      expect(res.statusCode).toBe(412);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.body).toEqual({ detail: 'Precondition Failed' });
     });
 
     it('returns 404 for methods other than GET and HEAD', async () => {

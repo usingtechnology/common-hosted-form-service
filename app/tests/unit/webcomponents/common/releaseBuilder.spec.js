@@ -111,7 +111,7 @@ describe('webcomponents releaseBuilder', () => {
       componentsDir = path.join(root, 'components');
       releasesDir = path.join(root, 'releases');
       write(path.join(frontendDir, 'public/embed/chefs-form-viewer.js'), `const INTEGRITY = ${INTEGRITY_PLACEHOLDER};\nconst VERSION = ${VERSION_PLACEHOLDER};\n`);
-      write(path.join(frontendDir, 'public/embed/chefs-form-viewer-embed.js'), `const INTEGRITY = ${INTEGRITY_PLACEHOLDER};\n`);
+      write(path.join(frontendDir, 'public/embed/chefs-form-viewer-embed.js'), `const INTEGRITY = ${INTEGRITY_PLACEHOLDER};\nconst VERSION = ${VERSION_PLACEHOLDER};\n`);
       for (const name of ['chefs-form-viewer-override-template.css', 'chefs-form-viewer-theme-dark.css', 'chefs-form-viewer-theme-material.css']) {
         write(path.join(frontendDir, 'public/embed', name), `/* ${name} */\n`);
       }
@@ -198,10 +198,20 @@ describe('webcomponents releaseBuilder', () => {
 
       expect(result.placeholders).toEqual({
         'embed/chefs-form-viewer.js': { integrity: 1, version: 1 },
-        'embed/chefs-form-viewer-embed.js': { integrity: 1, version: 0 },
+        'embed/chefs-form-viewer-embed.js': { integrity: 1, version: 1 },
       });
       expect(deps.minify).toHaveBeenCalledWith('public/embed/chefs-form-viewer.js', expect.any(String));
       expect(fs.readFileSync(path.join(dir, 'embed/chefs-form-viewer.min.js.map'), 'utf8')).toBe('{"sources":["public/embed/chefs-form-viewer.js"]}');
+    });
+
+    it.each([
+      ['a missing integrity placeholder', `const INTEGRITY = {};\nconst VERSION = ${VERSION_PLACEHOLDER};\n`],
+      ['a missing version placeholder', `const INTEGRITY = ${INTEGRITY_PLACEHOLDER};\n`],
+      ['a repeated placeholder', `const A = ${INTEGRITY_PLACEHOLDER};\nconst B = ${INTEGRITY_PLACEHOLDER};\nconst VERSION = ${VERSION_PLACEHOLDER};\n`],
+    ])('refuses a script with %s and leaves nothing behind', async (_name, source) => {
+      write(path.join(frontendDir, 'public/embed/chefs-form-viewer-embed.js'), source);
+      await expect(build()).rejects.toThrow('chefs-form-viewer-embed.js must contain each release placeholder exactly once');
+      expect(fs.readdirSync(releasesDir)).toEqual([]);
     });
 
     it('runs the frontend build unless skipped', async () => {

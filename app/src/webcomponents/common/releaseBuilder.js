@@ -157,6 +157,10 @@ async function buildRelease({ version, outDir, build = true, frontendDir = FRONT
     const buildScript = async (name) => {
       const source = fs.readFileSync(path.join(frontendDir, 'public/embed', `${name}.js`), 'utf8');
       const { code, counts } = injectPlaceholders(source, { version, integrity: hashDir(staging) });
+      // A missing placeholder would ship a release that loads its files without SRI
+      if (counts.integrity !== 1 || counts.version !== 1) {
+        throw new Error(`${name}.js must contain each release placeholder exactly once (integrity x${counts.integrity}, version x${counts.version})`);
+      }
       placeholders[`embed/${name}.js`] = counts;
       write(`embed/${name}.js`, code);
       const min = await minify(`public/embed/${name}.js`, code);
