@@ -1,7 +1,7 @@
 const Problem = require('api-problem');
 
 const service = require('../../../forms/form/service');
-const { formSchemaResponse } = require('../../common/responses');
+const { formSchemaResponse, submitResponse } = require('../../common/responses');
 
 module.exports = {
   /**
@@ -43,7 +43,7 @@ module.exports = {
       }
 
       const submission = await service.createSubmission(version.id, data, req.currentUser);
-      res.status(201).json({ id: submission.id, confirmationId: submission.confirmationId, createdAt: submission.createdAt });
+      res.status(201).json(submitResponse(submission));
     } catch (error) {
       next(error);
     }

@@ -40,4 +40,20 @@ function submissionResponse(read) {
   return { submission: { submission: { data: read?.submission?.submission?.data ?? {} } } };
 }
 
-module.exports = { formSchemaResponse, submissionResponse };
+/**
+ * Builds the submit response for a web component. The component needs the id to reload
+ * a keyed submission and passes the confirmation id and time to the host.
+ *
+ * @param {Object} submission - The saved submission from formService.createSubmission
+ * @returns {Object} { id, confirmationId, createdAt, draft }
+ */
+function submitResponse(submission) {
+  return {
+    id: submission.id,
+    confirmationId: submission.confirmationId,
+    createdAt: submission.createdAt,
+    draft: submission.draft === true,
+  };
+}
+
+module.exports = { formSchemaResponse, submissionResponse, submitResponse };

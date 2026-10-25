@@ -1,4 +1,4 @@
-const { formSchemaResponse, submissionResponse } = require('../../../../src/webcomponents/common/responses');
+const { formSchemaResponse, submissionResponse, submitResponse } = require('../../../../src/webcomponents/common/responses');
 
 const people = { createdBy: 'JDOE@idir', updatedBy: 'ASMITH@idir' };
 const schema = { display: 'form', type: 'form', components: [{ type: 'textfield', key: 'name' }] };
@@ -88,5 +88,27 @@ describe('submissionResponse', () => {
 
   it('returns empty data for a submission without any', () => {
     expect(submissionResponse({ submission: { submission: {} } })).toEqual({ submission: { submission: { data: {} } } });
+  });
+});
+
+describe('submitResponse', () => {
+  it('returns only the id, confirmation id, time and draft flag of a saved submission', () => {
+    const saved = {
+      id: 'sub-1',
+      confirmationId: 'SUB1',
+      createdAt: '2026-10-25T00:00:00.000Z',
+      draft: true,
+      formVersionId: 'version-1',
+      dedupKey: null,
+      deleted: false,
+      submission: { data: { name: 'Ada' }, metadata: { userAgent: 'Browser/1.0' } },
+      ...people,
+    };
+
+    expect(submitResponse(saved)).toStrictEqual({ id: 'sub-1', confirmationId: 'SUB1', createdAt: '2026-10-25T00:00:00.000Z', draft: true });
+  });
+
+  it('reports a submission without a draft flag as final', () => {
+    expect(submitResponse({ id: 'sub-1' }).draft).toBe(false);
   });
 });

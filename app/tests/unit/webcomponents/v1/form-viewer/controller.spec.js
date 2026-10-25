@@ -112,9 +112,18 @@ describe('webcomponents/v1/form-viewer controller', () => {
       expect(res.json).toHaveBeenCalledWith({ detail: 'No published version found for this form.' });
     });
 
-    it('creates submission and returns 201', async () => {
+    it('creates submission and returns only its id, confirmation id, time and draft flag', async () => {
       jest.spyOn(service, 'readPublishedForm').mockResolvedValue({ versions: [{ id: 'ver-1' }] });
-      jest.spyOn(service, 'createSubmission').mockResolvedValue({ id: 'sub-1' });
+      jest.spyOn(service, 'createSubmission').mockResolvedValue({
+        id: 'sub-1',
+        confirmationId: 'SUB1',
+        createdAt: '2026-10-25T00:00:00.000Z',
+        draft: false,
+        createdBy: 'api-user',
+        formVersionId: 'ver-1',
+        dedupKey: null,
+        submission: { data: { a: 1 }, metadata: { userAgent: 'x' } },
+      });
       const req = {
         params: { formId: uuidv4() },
         body: { submission: { data: { a: 1 } } },
@@ -125,7 +134,7 @@ describe('webcomponents/v1/form-viewer controller', () => {
       await controller.createSubmission(req, res, next);
       expect(service.createSubmission).toHaveBeenCalledWith('ver-1', req.body, expect.objectContaining({ id: 'external-user' }));
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(res.json).toHaveBeenCalledWith({ id: 'sub-1' });
+      expect(res.json.mock.calls[0][0]).toStrictEqual({ id: 'sub-1', confirmationId: 'SUB1', createdAt: '2026-10-25T00:00:00.000Z', draft: false });
       expect(next).not.toHaveBeenCalled();
     });
 

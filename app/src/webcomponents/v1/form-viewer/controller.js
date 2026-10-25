@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const service = require('../../../forms/form/service');
 const submissionService = require('../../../forms/submission/service');
-const { formSchemaResponse, submissionResponse } = require('../../common/responses');
+const { formSchemaResponse, submissionResponse, submitResponse } = require('../../common/responses');
 const { releaseDir } = require('../../common/releases');
 
 // Frozen v1 custom components and styles
@@ -62,8 +62,7 @@ module.exports = {
       // Create the submission
       const response = await service.createSubmission(versionId, req.body, req.currentUser);
 
-      // Placeholder for notifications/integrations
-      res.status(201).json(response);
+      res.status(201).json(submitResponse(response));
     } catch (error) {
       next(error);
     }

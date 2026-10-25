@@ -7,6 +7,7 @@ const formService = require('../../../../../src/forms/form/service');
 const submissionService = require('../../../../../src/forms/submission/service');
 const webcomponentSettingsService = require('../../../../../src/forms/form/webcomponentSettings/service');
 const webcomponentRouter = require('../../../../../src/webcomponents');
+const publicController = require('../../../../../src/webcomponents/v1/public/controller');
 
 // Runs the real web component router (credential stripping, runtime-auth, origin check, controller); services are stubbed.
 
@@ -132,9 +133,13 @@ describe('webcomponents/v1/public routes', () => {
       ['a host Bearer token', { Authorization: 'Bearer host.app.token' }],
       ['an API key', { Authorization: `Basic ${wrongApiKey}` }],
       ['a gateway token', { 'X-Chefs-Gateway-Token': 'not-a-real-token' }],
-    ])('ignores %s', async (_name, headers) => {
+    ])('ignores %s and keeps it from the handler', async (_name, headers) => {
+      jest.spyOn(publicController, 'readFormSchema');
       const res = await request(app).get(`/webcomponents/v1/public/${publicForm}/schema`).set('Origin', allowedOrigin).set(headers);
       expect(res.statusCode).toBe(200);
+      const [req] = publicController.readFormSchema.mock.calls[0];
+      expect(req.headers).not.toHaveProperty('authorization');
+      expect(req.headers).not.toHaveProperty('x-chefs-gateway-token');
     });
   });
 
@@ -168,10 +173,10 @@ describe('webcomponents/v1/public routes', () => {
   describe('POST /:formId/submit', () => {
     const submit = (formId, payload = body) => request(app).post(`/webcomponents/v1/public/${formId}/submit`).set('Origin', allowedOrigin).send(payload);
 
-    it('creates a submission and returns only its id, confirmation id and time', async () => {
+    it('creates a submission and returns only its id, confirmation id, time and draft flag', async () => {
       const res = await submit(publicForm);
       expect(res.statusCode).toBe(201);
-      expect(res.body).toEqual({ id: '44444444-4444-4444-8444-444444444444', confirmationId: '44444444', createdAt: '2026-10-23T00:00:00.000Z' });
+      expect(res.body).toEqual({ id: '44444444-4444-4444-8444-444444444444', confirmationId: '44444444', createdAt: '2026-10-23T00:00:00.000Z', draft: false });
       expect(formService.createSubmission).toHaveBeenCalledWith(
         'version-1',
         { submission: { data: body.submission.data }, draft: false },
