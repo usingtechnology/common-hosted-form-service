@@ -579,8 +579,8 @@
    *
    * Core events (CustomEvent)
    * - formio:ready, formio:render, formio:change, formio:submit, formio:submitDone, formio:error
-   * - formio:submitDone detail: { submission, showConfirmationId, hideContent }. submission has the
-   *   saved id, confirmationId and createdAt. showConfirmationId and hideContent follow the form's
+   * - formio:submitDone detail: { submission, showConfirmationId, hideContent }. submission is the
+   *   submit response: { id, confirmationId, createdAt, draft }. showConfirmationId and hideContent follow the form's
    *   "show confirmation id" and "hide submission contents" settings so the host can show its own
    *   confirmation.
    * - formio:authTokenRefreshed: fired when auth token is refreshed (includes new and old tokens)
@@ -726,7 +726,7 @@
       this._root = this.shadowRoot;
       this._log = createLogger(false);
       this._isBusy = false; // shared lock for load/submit/draft
-      this._lockHeldBySubmit = false; // submit() or draft() holds the lock
+      this._lockOwner = null; // the lock submit() or draft() holds, if any
       this.submitButtonKey = 'submit';
       this.printButtonKey = 'print';
       this.printEventName = 'printDocument';
@@ -992,6 +992,7 @@
     /**
      * Loads while the caller holds the busy lock. Releases it before formio:ready
      * so ready handlers can call submit() or draft().
+     * @returns {Promise<boolean>} Whether the form loaded; false when a formio:beforeLoad listener cancelled it
      * @private
      */
     async _loadHoldingLock() {
@@ -1004,7 +1005,7 @@
       );
       if (!proceed) {
         this._releaseBusyLock();
-        return;
+        return false;
       }
 
       try {
@@ -1013,6 +1014,7 @@
         this._releaseBusyLock(); // Unlock before emitting ready
         this._emit('formio:ready', { form: this.form });
         this._log.info('load:done');
+        return true;
       } catch (e) {
         this._releaseBusyLock();
         throw e;
@@ -1041,13 +1043,19 @@
     /**
      * Reloads at the end of a submit. submit() and draft() still hold the busy lock
      * here, so reload() would skip its load; this keeps their lock and loads directly.
-     * A button submit holds no lock, so it takes the lock like load() does.
+     * Any other caller, such as a button submit, takes the lock like load() does.
+     * @param {symbol|null} lock - The lock the calling submit() or draft() took, if any
+     * @param {Object} state - Properties to set once the reload is certain, such as readOnly
+     * @returns {Promise<boolean>} Whether the form reloaded; false when skipped, or when a
+     *   formio:beforeLoad listener cancelled the load
      * @private
      */
-    async _reloadAfterSubmit() {
+    async _reloadAfterSubmit(lock = null, state = {}) {
       // A removed element would keep timers running that nothing clears
-      if (!this.isConnected) return;
-      if (!this._lockHeldBySubmit && !this._acquireBusyLock('reload')) return;
+      if (!this.isConnected) return false;
+      if (!this._holdsLock(lock) && !this._acquireBusyLock('reload'))
+        return false;
+      Object.assign(this, state);
       this._log.info('reload:afterSubmit');
       try {
         await this.destroy();
@@ -1055,7 +1063,32 @@
         this._releaseBusyLock();
         throw error;
       }
-      await this._loadHoldingLock();
+      return this._loadHoldingLock();
+    }
+
+    /**
+     * Clears the form at the end of a submit whose contents the form's settings hide.
+     * Like the reload, it keeps the calling submit()'s lock or takes the lock, and skips
+     * while another call, such as a host load(), holds it.
+     * @param {symbol|null} lock - The lock the calling submit() or draft() took, if any
+     * @returns {Promise<boolean>} Whether the form was cleared
+     * @private
+     */
+    async _clearAfterSubmit(lock = null) {
+      if (!this.isConnected) return false;
+      const holdsLock = this._holdsLock(lock);
+      if (!holdsLock && !this._acquireBusyLock('clear')) return false;
+      try {
+        await this._clearForm();
+      } finally {
+        if (!holdsLock) this._releaseBusyLock();
+      }
+      return true;
+    }
+
+    /** True when the calling submit() or draft() still holds the busy lock */
+    _holdsLock(lock) {
+      return lock !== null && this._lockOwner === lock;
     }
 
     /**
@@ -1355,11 +1388,12 @@
      */
     async _submitHoldingLock(actionName, isSubmit) {
       if (!this._acquireBusyLock(actionName)) return;
-      this._lockHeldBySubmit = true;
+      const lock = Symbol(actionName);
+      this._lockOwner = lock;
       try {
-        await this._programmaticSubmit(isSubmit);
+        await this._programmaticSubmit(isSubmit, lock);
       } finally {
-        if (this._lockHeldBySubmit) this._releaseBusyLock();
+        if (this._lockOwner === lock) this._releaseBusyLock();
       }
     }
 
@@ -1513,17 +1547,22 @@
      * with the provided data.
      *
      * @param {Object} data - The form data object to display
-     * @returns {Promise<void>} Resolves when the form is reloaded and data is set
+     * @param {symbol|null} lock - The lock the calling submit() or draft() took, if any
+     * @returns {Promise<boolean>} Whether the form reloaded read-only with the data
      * @private
      */
-    async _displayAsReadOnly(data) {
+    async _displayAsReadOnly(data, lock = null) {
       this._log.info('_displayAsReadOnly:begin');
 
-      this.readOnly = true;
-      await this._reloadAfterSubmit();
+      // A skipped reload leaves the current form as it is, so the data is not applied to it
+      if (!(await this._reloadAfterSubmit(lock, { readOnly: true }))) {
+        this._log.info('_displayAsReadOnly:skipped');
+        return false;
+      }
       this.setSubmission(data);
 
       this._log.info('_displayAsReadOnly:done');
+      return true;
     }
 
     /**
@@ -1640,7 +1679,7 @@
      */
     _releaseBusyLock() {
       this._isBusy = false;
-      this._lockHeldBySubmit = false;
+      this._lockOwner = null;
     }
 
     /**
@@ -1918,8 +1957,9 @@
     /**
      * Internal helper to perform programmatic submit/draft with a single path
      * @param {boolean} isSubmit True for submit, false for draft
+     * @param {symbol|null} lock - The lock the calling submit() or draft() took
      */
-    async _programmaticSubmit(isSubmit) {
+    async _programmaticSubmit(isSubmit, lock = null) {
       if (!this.formioInstance) return;
       this._log.info(isSubmit ? 'submit:programmatic' : 'draft:programmatic');
       const currentData =
@@ -1930,7 +1970,7 @@
         {};
       const submitKey = this._getSubmitButtonKey();
       currentData[submitKey] = isSubmit;
-      await this._manualSubmit({ data: currentData }, isSubmit);
+      await this._manualSubmit({ data: currentData }, isSubmit, lock);
     }
 
     _emit(name, detail, opts = {}) {
@@ -2244,12 +2284,13 @@
 
     /** Fetch and parse the form schema from the backend */
     async _loadSchema() {
+      // Decided once, so a beforeLoadSchema listener changing credentials cannot mix the two modes
+      const anonymous = this._isAnonymous();
       const url = this._resolveUrl('schema');
       this._log.info('schema:request', { url });
       if (!this._emit('formio:beforeLoadSchema', { url }, { cancelable: true }))
         return;
 
-      const anonymous = this._isAnonymous();
       const res = await fetch(url, {
         headers: this._chefsHeaders(url, {}, anonymous),
       });
@@ -2711,8 +2752,11 @@
       };
     }
 
-    /** Post submission payload to CHEFS backend and emit completion/error */
-    async _manualSubmit(submission, isSubmit = true) {
+    /**
+     * Post submission payload to CHEFS backend and emit completion/error
+     * @param {symbol|null} lock - The lock the calling submit() or draft() took; null for a button submit
+     */
+    async _manualSubmit(submission, isSubmit = true, lock = null) {
       this._log.info('beforeSubmit', { submission });
       const proceed = this._emitCancelable('formio:beforeSubmit', {
         submission,
@@ -2725,7 +2769,7 @@
 
       // Handle host-controlled submission modes (both submit and draft)
       if (!this._submitsToChefs()) {
-        await this._handleHostSubmit(submission, isSubmit);
+        await this._handleHostSubmit(submission, isSubmit, lock);
         return;
       }
 
@@ -2768,7 +2812,8 @@
         await this._handleAutoReload(
           submitParsed.submission,
           JSON.parse(body).submission?.data,
-          anonymous
+          anonymous,
+          lock
         );
       }
     }
@@ -2783,6 +2828,7 @@
      *
      * @param {Object} submission - The validated submission object with data
      * @param {boolean} isSubmit - True for final submission, false for draft save
+     * @param {symbol|null} lock - The lock the calling submit() or draft() took, if any
      * @returns {Promise<void>} Resolves when host submission handling completes
      * @private
      *
@@ -2791,7 +2837,7 @@
      *   Host can call event.preventDefault() to prevent auto read-only display (in 'host' mode).
      *   Host can call event.detail.waitUntil(promise) for async operations before display.
      */
-    async _handleHostSubmit(submission, isSubmit = true) {
+    async _handleHostSubmit(submission, isSubmit = true, lock = null) {
       const data = submission?.data || {};
       const isDraft = !isSubmit;
 
@@ -2819,7 +2865,7 @@
       // For 'host' mode: auto-display as read-only unless cancelled (submissions only, not drafts)
       if (this.submitMode === 'host' && proceed && allowed && !isDraft) {
         try {
-          await this._displayAsReadOnly(data);
+          await this._displayAsReadOnly(data, lock);
         } catch (error) {
           this._log.error('hostSubmit:displayFailed', { error: error.message });
           this._emit('formio:error', {
@@ -2846,17 +2892,19 @@
      * @param {Object} submission - The submission object from the successful submission
      * @param {Object} [data] - The data that was submitted; shown read-only after an anonymous submit
      * @param {boolean} [anonymous] - Whether the submission was sent anonymously
+     * @param {symbol|null} [lock] - The lock the calling submit() or draft() took, if any
      * @returns {Promise<void>} Resolves when auto-reload completes or is cancelled
      *
      * @fires ChefsFormViewer#formio:beforeAutoReload - Before auto-reload starts (cancelable)
      * @fires ChefsFormViewer#formio:autoReload - When auto-reload begins
-     * @fires ChefsFormViewer#formio:autoReloadComplete - When auto-reload completes
+     * @fires ChefsFormViewer#formio:autoReloadComplete - When auto-reload completes, not when it was skipped
      * @fires ChefsFormViewer#formio:error - If auto-reload fails
      */
     async _handleAutoReload(
       submission,
       data = {},
-      anonymous = this._isAnonymous()
+      anonymous = this._isAnonymous(),
+      lock = null
     ) {
       this._log.info('autoReload:starting', {
         submissionId: submission.id,
@@ -2892,16 +2940,24 @@
         // Wait a moment then reload as read-only (like the demo pattern)
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
+        let reloaded = true;
         if (this.form?.hideSubmissionContentOnSuccess === true) {
           // The form's settings hide submission contents on success
-          await this._clearForm();
+          reloaded = await this._clearAfterSubmit(lock);
         } else if (anonymous) {
           // Anonymous submissions cannot be read back, so show what was sent
-          await this._displayAsReadOnly(data);
+          reloaded = await this._displayAsReadOnly(data, lock);
         } else {
-          this.submissionId = submission.id;
-          this.readOnly = true;
-          await this._reloadAfterSubmit();
+          reloaded = await this._reloadAfterSubmit(lock, {
+            submissionId: submission.id,
+            readOnly: true,
+          });
+        }
+        // Removed, another call holds the lock, or a beforeLoad listener cancelled the load:
+        // nothing reloaded or cleared, so nothing is reported
+        if (!reloaded) {
+          this._log.info('autoReload:skipped');
+          return;
         }
 
         this._log.info('autoReload:completed');
@@ -2919,10 +2975,12 @@
 
     /**
      * Removes the form after a submit whose contents the form's settings hide.
+     * Token refresh keeps running, so a later load() still has a valid token.
      * @private
      */
     async _clearForm() {
-      await this.destroy();
+      if (this.formioInstance?.destroy) this.formioInstance.destroy();
+      this.formioInstance = null;
       this._root.querySelector('#formio-container')?.replaceChildren();
     }
 

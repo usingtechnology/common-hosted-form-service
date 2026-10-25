@@ -779,7 +779,7 @@ describe('ChefsFormViewer internals', () => {
     el._handleAutoReload = vi.fn().mockResolvedValue(undefined);
 
     await el.submit();
-    expect(el._programmaticSubmit).toHaveBeenCalledWith(true);
+    expect(el._programmaticSubmit).toHaveBeenCalledWith(true, expect.any(Symbol));
     expect(el._handleAutoReload).toHaveBeenCalledWith({
       id: 'test-submission',
     });
@@ -832,7 +832,7 @@ describe('ChefsFormViewer internals', () => {
 
     await el.draft();
 
-    expect(el._programmaticSubmit).toHaveBeenCalledWith(false);
+    expect(el._programmaticSubmit).toHaveBeenCalledWith(false, expect.any(Symbol));
   });
 
   it('draft does not trigger auto-reload even when enabled', async () => {
@@ -848,7 +848,7 @@ describe('ChefsFormViewer internals', () => {
     el._handleAutoReload = vi.fn().mockResolvedValue(undefined);
 
     await el.draft();
-    expect(el._programmaticSubmit).toHaveBeenCalledWith(false);
+    expect(el._programmaticSubmit).toHaveBeenCalledWith(false, expect.any(Symbol));
     expect(el._handleAutoReload).not.toHaveBeenCalled();
 
     acquireSpy.mockRestore();
@@ -1046,6 +1046,129 @@ describe('ChefsFormViewer internals', () => {
       await el.submit();
 
       expect(el._isBusy).toBe(true);
+      el._releaseBusyLock();
+    });
+
+    it('keeps the lock of a submit() that a formio:ready handler starts', async () => {
+      // The reload replaces the instance, so the inner submit has data to send
+      el._initFormio = vi.fn(async () => {
+        el.formioInstance = { submission: { data: { name: 'Ada' } } };
+      });
+      let finishInner;
+      globalThis.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ id: 'sub-1' }),
+        })
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishInner = () =>
+                resolve({
+                  ok: true,
+                  json: () => Promise.resolve({ id: 'sub-2' }),
+                });
+            })
+        );
+      let inner;
+      el.addEventListener(
+        'formio:ready',
+        () => {
+          inner = el.submit();
+        },
+        { once: true }
+      );
+
+      await el.submit();
+
+      // The first submit has finished; the second is still waiting for CHEFS and keeps the lock
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(el._isBusy).toBe(true);
+
+      el.autoReloadOnSubmit = false;
+      finishInner();
+      await inner;
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('does not let a button submit reload while submit() is still running', async () => {
+      el.autoReloadOnSubmit = false;
+      let finish;
+      globalThis.fetch.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = () =>
+              resolve({ ok: true, json: () => Promise.resolve({ id: 'sub-1' }) });
+          })
+      );
+      const running = el.submit();
+      await Promise.resolve();
+
+      // A button submit has no lock of its own, so it must not use the one submit() holds
+      await el._reloadAfterSubmit();
+
+      expect(el._initFormio).not.toHaveBeenCalled();
+      expect(el._isBusy).toBe(true);
+      finish();
+      await running;
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('reports no completion when a beforeLoad listener cancels the reload', async () => {
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 'sub-1' }),
+      });
+      el.addEventListener('formio:beforeLoad', (e) => e.preventDefault(), {
+        once: true,
+      });
+      const events = [];
+      el.addEventListener('formio:autoReloadComplete', () =>
+        events.push('autoReloadComplete')
+      );
+
+      await el.submit();
+
+      expect(el._initFormio).not.toHaveBeenCalled();
+      expect(events).toEqual([]);
+      expect(el._isBusy).toBe(false);
+    });
+
+    it('does not clear a form that another call is loading', async () => {
+      el.form = { hideSubmissionContentOnSuccess: true };
+      el.shadowRoot.querySelector('#formio-container').textContent = 'form';
+      const instance = el.formioInstance;
+      el._isBusy = true;
+      const events = [];
+      el.addEventListener('formio:autoReloadComplete', () =>
+        events.push('autoReloadComplete')
+      );
+
+      await el._handleAutoReload({ id: 'sub-1' }, {}, false);
+
+      expect(el.formioInstance).toBe(instance);
+      expect(
+        el.shadowRoot.querySelector('#formio-container').textContent
+      ).toBe('form');
+      expect(events).toEqual([]);
+      expect(el._isBusy).toBe(true);
+      el._releaseBusyLock();
+    });
+
+    it('reports no completion when another call holds the lock', async () => {
+      el.setSubmission = vi.fn();
+      el._isBusy = true;
+      const events = [];
+      el.addEventListener('formio:autoReloadComplete', () =>
+        events.push('autoReloadComplete')
+      );
+
+      await el._handleAutoReload({ id: 'sub-1' }, { name: 'Ada' }, true);
+
+      expect(events).toEqual([]);
+      expect(el._initFormio).not.toHaveBeenCalled();
+      expect(el.setSubmission).not.toHaveBeenCalled();
+      expect(el.readOnly).not.toBe(true);
       el._releaseBusyLock();
     });
 
@@ -2470,6 +2593,7 @@ describe('ChefsFormViewer internals', () => {
   });
 
   it('_loadPrefillData handles fetch errors gracefully', async () => {
+    el.apiKey = 'test-key';
     el.submissionId = 'test-submission';
     el._resolveUrl = vi.fn().mockReturnValue('https://test/submission');
     el._buildAuthHeader = vi.fn().mockReturnValue({});
@@ -2477,6 +2601,10 @@ describe('ChefsFormViewer internals', () => {
     globalThis.fetch.mockRejectedValueOnce(new Error('Network error'));
 
     await el._loadPrefillData();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://test/submission',
+      expect.any(Object)
+    );
     expect(el._prefillData).toBeNull();
   });
 
@@ -2507,6 +2635,7 @@ describe('ChefsFormViewer internals', () => {
 
   it('_manualSubmit posts submission data to backend', async () => {
     const submission = { data: { test: 'value' } };
+    el.apiKey = 'test-key';
     el._resolveUrl = vi.fn().mockReturnValue('https://test/submit');
     el._buildAuthHeader = vi
       .fn()
@@ -2523,6 +2652,14 @@ describe('ChefsFormViewer internals', () => {
     });
 
     await el._manualSubmit(submission);
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://test/submit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Chefs-Gateway-Token': 'test',
+      },
+      body: JSON.stringify({ submission, draft: false }),
+    });
     expect(el._emit).toHaveBeenCalledWith('formio:submit', { submission });
     expect(el._emit).toHaveBeenCalledWith('formio:submitDone', {
       submission,
@@ -2557,6 +2694,7 @@ describe('ChefsFormViewer internals', () => {
 
   it('_manualSubmit saves a draft with draft: true', async () => {
     const submission = { data: { test: 'value', submit: false } };
+    el.apiKey = 'test-key';
     el._resolveUrl = vi.fn().mockReturnValue('https://test/submit');
     el._buildAuthHeader = vi.fn().mockReturnValue({});
     el._emitCancelable = vi.fn().mockReturnValue(true);
@@ -2579,6 +2717,7 @@ describe('ChefsFormViewer internals', () => {
 
   it('_manualSubmit handles submission errors', async () => {
     const submission = { data: { test: 'value' } };
+    el.apiKey = 'test-key';
     el._resolveUrl = vi.fn().mockReturnValue('https://test/submit');
     el._buildAuthHeader = vi.fn().mockReturnValue({});
     el._emitCancelable = vi.fn().mockReturnValue(true);
@@ -2619,11 +2758,12 @@ describe('ChefsFormViewer internals', () => {
     // Test submission (should trigger auto-reload)
     el.autoReloadOnSubmit = true;
     await el._manualSubmit(submission, true);
-    // No credentials in this test, so the submit was anonymous
+    // No credentials in this test, so the submit was anonymous; a direct call holds no lock
     expect(el._handleAutoReload).toHaveBeenCalledWith(
       submitResult.submission,
       submission.data,
-      true
+      true,
+      null
     );
 
     // Test draft (should not trigger auto-reload)
@@ -2646,7 +2786,7 @@ describe('ChefsFormViewer internals', () => {
     el._emit = vi.fn();
     el.submissionId = null;
     el.readOnly = false;
-    el._reloadAfterSubmit = vi.fn().mockResolvedValue(undefined);
+    el._reloadAfterSubmit = vi.fn().mockResolvedValue(true);
 
     // Mock setTimeout to run immediately
     const originalSetTimeout = globalThis.setTimeout;
@@ -2665,9 +2805,11 @@ describe('ChefsFormViewer internals', () => {
       submission,
       submissionId: 'submission-123',
     });
-    expect(el.submissionId).toBe('submission-123');
-    expect(el.readOnly).toBe(true);
-    expect(el._reloadAfterSubmit).toHaveBeenCalled();
+    // The submission id and read-only flag are set only once the reload is certain
+    expect(el._reloadAfterSubmit).toHaveBeenCalledWith(null, {
+      submissionId: 'submission-123',
+      readOnly: true,
+    });
     expect(el._emit).toHaveBeenCalledWith('formio:autoReloadComplete', {
       submission,
       submissionId: 'submission-123',
@@ -3409,7 +3551,7 @@ describe('ChefsFormViewer internals', () => {
     const submission = { data: { name: 'test' } };
     await el._handleHostSubmit(submission, true);
 
-    expect(el._displayAsReadOnly).toHaveBeenCalledWith({ name: 'test' });
+    expect(el._displayAsReadOnly).toHaveBeenCalledWith({ name: 'test' }, null);
   });
 
   it('_handleHostSubmit does not auto-display for host mode drafts', async () => {
@@ -3457,17 +3599,39 @@ describe('ChefsFormViewer internals', () => {
     expect(el._displayAsReadOnly).not.toHaveBeenCalled();
   });
 
+  it('_clearForm removes the form and keeps the token refresh running', async () => {
+    const destroy = vi.fn();
+    el.formioInstance = { destroy };
+    el._jwtRefreshTimer = 42;
+
+    await el._clearForm();
+
+    expect(destroy).toHaveBeenCalled();
+    expect(el.formioInstance).toBeNull();
+    expect(el._jwtRefreshTimer).toBe(42);
+    el._jwtRefreshTimer = null;
+  });
+
   // _displayAsReadOnly tests
-  it('_displayAsReadOnly sets readOnly and reloads with data', async () => {
-    el.readOnly = false;
-    el._reloadAfterSubmit = vi.fn().mockResolvedValue(undefined);
+  it('_displayAsReadOnly reloads read-only with data', async () => {
+    el._reloadAfterSubmit = vi.fn().mockResolvedValue(true);
     el.setSubmission = vi.fn();
 
-    await el._displayAsReadOnly({ field: 'value' });
+    expect(await el._displayAsReadOnly({ field: 'value' })).toBe(true);
 
-    expect(el.readOnly).toBe(true);
-    expect(el._reloadAfterSubmit).toHaveBeenCalled();
+    expect(el._reloadAfterSubmit).toHaveBeenCalledWith(null, { readOnly: true });
     expect(el.setSubmission).toHaveBeenCalledWith({ field: 'value' });
+  });
+
+  it('_displayAsReadOnly leaves the form alone when the reload is skipped', async () => {
+    el.readOnly = false;
+    el._reloadAfterSubmit = vi.fn().mockResolvedValue(false);
+    el.setSubmission = vi.fn();
+
+    expect(await el._displayAsReadOnly({ field: 'value' })).toBe(false);
+
+    expect(el.setSubmission).not.toHaveBeenCalled();
+    expect(el.readOnly).toBe(false);
   });
 
   // _manualSubmit with submitMode tests
@@ -3481,7 +3645,8 @@ describe('ChefsFormViewer internals', () => {
 
     expect(el._handleHostSubmit).toHaveBeenCalledWith(
       { data: { test: 'value' } },
-      true
+      true,
+      null
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -3496,7 +3661,8 @@ describe('ChefsFormViewer internals', () => {
 
     expect(el._handleHostSubmit).toHaveBeenCalledWith(
       { data: { test: 'value' } },
-      false
+      false,
+      null
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
@@ -3660,7 +3826,7 @@ describe('ChefsFormViewer internals', () => {
 
     const detail = eventSpy.mock.calls[0][0].detail;
     expect(detail.data).toEqual({});
-    expect(el._displayAsReadOnly).toHaveBeenCalledWith({});
+    expect(el._displayAsReadOnly).toHaveBeenCalledWith({}, null);
   });
 
   it('_handleHostSubmit handles undefined submission', async () => {
@@ -3682,6 +3848,7 @@ describe('ChefsFormViewer internals', () => {
     const callOrder = [];
     el._reloadAfterSubmit = vi.fn().mockImplementation(async () => {
       callOrder.push('reload');
+      return true;
     });
     el.setSubmission = vi.fn().mockImplementation(() => {
       callOrder.push('setSubmission');
@@ -3715,6 +3882,72 @@ describe('ChefsFormViewer internals', () => {
 
     expect(el._handleHostSubmit).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  describe('with CHEFS credentials', () => {
+    const schemaUrl =
+      'https://chefs.example/app/webcomponents/v1/form-viewer/form-1/schema';
+    const submitUrl =
+      'https://chefs.example/app/webcomponents/v1/form-viewer/form-1/submit';
+
+    beforeEach(() => {
+      el.baseUrl = 'https://chefs.example/app';
+      el.formId = 'form-1';
+      el.autoReloadOnSubmit = false;
+      el._emitCancelable = vi.fn().mockReturnValue(true);
+      el._waitUntil = vi.fn().mockResolvedValue(true);
+    });
+
+    it('sends the API key with the schema and submit requests', async () => {
+      el.apiKey = 'key';
+      const basic = `Basic ${btoa('form-1:key')}`;
+      globalThis.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({ form: { name: 'Form' }, schema: { components: [] } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ id: 'sub-1' }),
+        });
+
+      await el._loadSchema();
+      await el._manualSubmit({ data: {} });
+
+      expect(globalThis.fetch).toHaveBeenNthCalledWith(1, schemaUrl, {
+        headers: { Authorization: basic },
+      });
+      const [url, init] = globalThis.fetch.mock.calls[1];
+      expect(url).toBe(submitUrl);
+      expect(init.headers).toEqual({
+        'Content-Type': 'application/json',
+        Authorization: basic,
+      });
+    });
+
+    it('sends the gateway token and keeps the host Bearer header', async () => {
+      el.authToken = 'token';
+      el.onPassthroughHeaders = () => ({
+        Authorization: 'Bearer host-token',
+        'X-Host': 'yes',
+      });
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ form: { name: 'Form' }, schema: { components: [] } }),
+      });
+
+      await el._loadSchema();
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(schemaUrl, {
+        headers: {
+          'X-Chefs-Gateway-Token': 'token',
+          Authorization: 'Bearer host-token',
+          'X-Host': 'yes',
+        },
+      });
+    });
   });
 
   describe('without CHEFS credentials', () => {
@@ -3763,6 +3996,24 @@ describe('ChefsFormViewer internals', () => {
     it('stays anonymous when the host overrides only an asset', () => {
       el.endpoints = { themeCss: 'https://host.example/theme.css' };
       expect(el._isAnonymous()).toBe(true);
+    });
+
+    it('keeps the schema request anonymous when a beforeLoadSchema listener adds a key', async () => {
+      el.addEventListener('formio:beforeLoadSchema', () => (el.apiKey = 'late-key'), {
+        once: true,
+      });
+      globalThis.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ form: { name: 'Form' }, schema: { components: [] } }),
+      });
+
+      await el._loadSchema();
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://chefs.example/app/webcomponents/v1/public/form-1/schema',
+        { headers: {} }
+      );
     });
 
     it('sends no credentials or host headers with the schema request', async () => {

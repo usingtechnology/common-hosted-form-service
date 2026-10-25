@@ -24,13 +24,13 @@ These files are the source for future releases. The frontend build does not ship
 
 #### **Release Tools**
 
-| File                                                   | Purpose                                                 |
-| ------------------------------------------------------ | ------------------------------------------------------- |
-| `app/scripts/embed-release.js`                         | `npm run embed:release -- <x.y.z>` cuts a release       |
-| `app/src/webcomponents/common/releaseBuilder.js`       | Assembles a release folder and its `integrity.json`     |
-| `app/frontend/src/embed/themeExtractor.js`             | Builds `chefs-theme.css` from the frontend CSS bundle   |
-| `app/frontend/tests/unit/embed/themeExtractor.spec.js` | Unit tests for theme extraction functionality           |
-| `app/frontend/tests/fixtures/chefs-index.fixture.css`  | Test fixture for theme extraction testing               |
+| File                                                   | Purpose                                               |
+| ------------------------------------------------------ | ----------------------------------------------------- |
+| `app/scripts/embed-release.js`                         | `npm run embed:release -- <x.y.z>` cuts a release     |
+| `app/src/webcomponents/common/releaseBuilder.js`       | Assembles a release folder and its `integrity.json`   |
+| `app/frontend/src/embed/themeExtractor.js`             | Builds `chefs-theme.css` from the frontend CSS bundle |
+| `app/frontend/tests/unit/embed/themeExtractor.spec.js` | Unit tests for theme extraction functionality         |
+| `app/frontend/tests/fixtures/chefs-index.fixture.css`  | Test fixture for theme extraction testing             |
 
 #### **For CHEFS Developers**
 
@@ -47,11 +47,11 @@ These files are the source for future releases. The frontend build does not ship
 
 ### Releases
 
-| Release | Contents                                                                                                     |
-| ------- | ------------------------------------------------------------------------------------------------------------ |
-| `v1`    | Frozen legacy files at `/app/embed/` and `/app/webcomponents/v1/`. Unchanged.                                |
-| `1.0.0` | v1 behaviour (API key or gateway token) with the fixes below. Loads only its own files, each checked by SRI. |
-| `1.1.0` | 1.0.0 plus embedding a Public form without an API key or token, on websites the form allows.                 |
+| Release | Contents                                                                                                                                                           |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v1`    | Frozen legacy files at `/app/embed/` and `/app/webcomponents/v1/`. Unchanged, except that `chefs-index.css` now points its font and image URLs at `chefs-assets/`. |
+| `1.0.0` | v1 behaviour (API key or gateway token) with the fixes below. Loads its own files from the release folder, each checked by SRI.                                    |
+| `1.1.0` | 1.0.0 plus embedding a Public form without an API key or token, on websites the form allows.                                                                       |
 
 #### Embedding a release
 
@@ -66,6 +66,8 @@ Load the embed script from the release folder, with its hash from the release's 
 ```
 
 - The embed script loads `chefs-form-viewer.min.js`, Form.io, the CHEFS styles, Font Awesome and the BC Gov components from the same release folder, each with its SRI hash. The CHEFS stylesheet still imports Roboto and Material Icons from Google Fonts, as v1 does.
+- Form.io still loads some libraries from `https://cdn.form.io` when a form uses them, without SRI, as in v1: flatpickr for date and time fields, Quill or CKEditor for rich text, and Ace for code editors. A reCAPTCHA component loads Google reCAPTCHA. A Content Security Policy that blocks these hosts breaks those fields.
+- The script URL, `auth-token` and `api-key` included, is written to the CHEFS request log and to the logs of any proxy on the way. Pass a short-lived gateway token there, not an API key, or create the `<chefs-form-viewer>` element yourself and set its `auth-token` attribute.
 - The CHEFS base URL defaults to the server and path the script was loaded from; `base-url` overrides it. Set `base-url` whenever the release files are served from somewhere other than CHEFS, or the component sends its API key or token to that server.
 - To use the component without the embed script, load `embed/chefs-form-viewer.min.js` with its hash from `integrity.json`.
 - A release never changes; moving to another release means changing the version and the hash.
@@ -82,10 +84,12 @@ Changes in 1.0.0 from v1:
 Changes in 1.1.0 from 1.0.0:
 
 - Anonymous embeds of Public forms; see [Public forms without an API key](#public-forms-without-an-api-key).
-- `formio:submitDone` carries `{ submission, showConfirmationId, hideContent }` whenever CHEFS saves a submission, keyed or anonymous. `submission` has the saved `id`, `confirmationId` and `createdAt`; the two flags follow the form's "show confirmation ID" and "hide submission contents" settings, so the host can show its own confirmation.
-- An embed with no API key or token that points the `schema` or `submit` endpoint at its own server (for example a proxy that adds the key) is not anonymous and works as in 1.0.0.
-- After a submit, a form whose settings hide submission contents on success is cleared instead of reloaded read-only, with an API key or token as well as anonymously.
+- `formio:submitDone` carries `{ submission, showConfirmationId, hideContent }` whenever CHEFS saves a submission, keyed or anonymous. `submission` is the submit response, `{ id, confirmationId, createdAt, draft }`; the two flags follow the form's "show confirmation ID" and "hide submission contents" settings, so the host can show its own confirmation.
+- An embed with no API key or token that points the `schema` or `submit` endpoint at its own server (for example a proxy that adds the key) is not anonymous and works as in 1.0.0. Setting only `base-url` to such a proxy is not enough: the component then calls the anonymous endpoints. Set `onBuildAuthHeader` too (it may return `{}`), or the endpoints.
+- After a submit, a form whose settings hide submission contents on success is cleared instead of reloaded read-only, with an API key or token as well as anonymously. Clearing keeps the `auth-token` refresh running, so a later `load()` still works.
 - `refreshAuthToken()` does nothing without an `auth-token`, instead of sending an empty refresh that fails.
+- A `submit()` or `draft()` that a `formio:ready` handler starts during the reload after a submit keeps the busy lock until it finishes. In 1.0.0 the first call released it early.
+- When the reload or clear after a submit does not happen, because the element was removed, another call holds the lock or a `formio:beforeLoad` listener cancelled the load, the submitted data is not applied to the current form and `formio:autoReloadComplete` does not fire.
 
 ### Authentication
 
@@ -114,7 +118,7 @@ A form that uses the Public login option can be embedded without an API key or g
 ```html
 <script
   src="https://<chefs-host>/app/embed/1.1.0/embed/chefs-form-viewer-embed.min.js?form-id=<formId>"
-  integrity="sha384-pssG3NFBzqNOURpscGvlOhmJiGZH0Z+jkC4pHcNmiXH1IVWgTRv9MFDNHTNpw0sw"
+  integrity="sha384-vwKyehVeCdWgM5RMdI/ZnNN6BnyJedjQBn+X12lXXYXF8urtwgplfsZfrfa8bATF"
   crossorigin="anonymous"
 ></script>
 ```
@@ -126,12 +130,14 @@ A form that uses the Public login option can be embedded without an API key or g
 
 Releases v1 and 1.0.0 call the keyed `form-viewer` endpoints, so without a key they fail with `401`.
 
-| Endpoint                                                  | Purpose                                                 |
-| --------------------------------------------------------- | ------------------------------------------------------- |
-| `GET {basePath}/webcomponents/v1/public/{formId}/schema`  | Form schema (same response as the keyed endpoint)       |
-| `POST {basePath}/webcomponents/v1/public/{formId}/submit` | Submit; returns `201 { id, confirmationId, createdAt }` |
+| Endpoint                                                  | Purpose                                                        |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| `GET {basePath}/webcomponents/v1/public/{formId}/schema`  | Form schema (same response as the keyed endpoint)              |
+| `POST {basePath}/webcomponents/v1/public/{formId}/submit` | Submit; returns `201 { id, confirmationId, createdAt, draft }` |
 
 - **Allowed origins**: the browser's `Origin` header must match one of the form's allowed origins (`https://host[:port]`, or `http://` on `localhost`, `127.0.0.1` or `[::1]` for development). A missing or unlisted origin, or an empty list, returns `403`.
+  - The list decides which websites a browser lets embed the form. It is not access control: a script or server can send any `Origin`, and anyone can already submit a Public form in CHEFS.
+  - Remove `localhost` origins from a production form once development is done: a page served on any visitor's own machine at that port matches them.
 - **Public forms only**: any other form returns `404`.
 - **Credentials are ignored**: an `Authorization` or `X-Chefs-Gateway-Token` header is removed before the request is handled, so a host page can pass its own headers. The submission is recorded as `public`, the same as a public form submitted in CHEFS.
 - **Submissions are final**: only `submission.data` and `submission.metadata` are read from the request, `draft` is always `false`, and data that references uploaded files is rejected with `400`.
@@ -139,3 +145,4 @@ Releases v1 and 1.0.0 call the keyed `form-viewer` endpoints, so without a key t
 - **Only what the component needs**: these endpoints are for the web component only, and return only what a component release reads. This is a server change, so it applies to every release, v1 included.
   - Schema endpoints (`public` and `form-viewer`): `{ form, schema }`, where `form` has `name`, `description`, `showSubmissionConfirmation`, `hideSubmissionContentOnSuccess`, `enableSubmitterDraft` and `identityProviders` (each with only `code`), and `schema` is the published Form.io schema. The same `form` reaches the host through `formio:loadSchema`, the `formMetadata` property and the embed script's `onMetadataLoaded`.
   - Keyed read-submission endpoint: `{ submission: { submission: { data } } }`.
+  - Submit endpoints (`public` and `form-viewer`): `{ id, confirmationId, createdAt, draft }`.
