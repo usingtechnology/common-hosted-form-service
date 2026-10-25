@@ -105,10 +105,12 @@ module.exports = function makeResourceResolver({ deps }) {
         }
       }
 
-      // If file has no formSubmissionId, it's a draft file
-      // For draft files, we can't determine the form from the file record alone
-      // The form relationship is established during upload via query parameters
-      // Draft files are handled by uploader permissions, not form permissions
+      // If file has no formSubmissionId, it's a draft file. A web component upload records its
+      // form, which ties the file to an API key's form. Draft files without one are handled by
+      // uploader permissions, and API credentials cannot reach them.
+      if (file.formId) {
+        return await loadFileWithForm(file.formId, file);
+      }
       return { form: null, submission: null, file };
     },
 

@@ -312,9 +312,38 @@ const chefsTemplate = (submission) => {
   };
 };
 
+/**
+ * Finds the ids of the files submission data references: the id of each `data` object that has
+ * one, at any depth. Walks the data with a stack instead of recursion, so deeply nested input
+ * cannot overflow the call stack.
+ * @param {*} submissionData the submission data
+ * @returns {string[]} the file ids, in the order they appear
+ */
+const findFileIds = (submissionData) => {
+  const fileIds = [];
+  const stack = [{ value: submissionData }];
+  while (stack.length) {
+    const { value, fileId } = stack.pop();
+    if (fileId) {
+      fileIds.push(fileId);
+    } else if (typeof value === 'object' && value !== null) {
+      // One push per entry: spreading a very large array into push() would exceed the argument limit
+      for (const entry of fileSearchEntries(value)) stack.push(entry);
+    }
+  }
+  return fileIds;
+};
+
+// The stack entries for an object's or array's children, last to first, so they come off the stack in order
+const fileSearchEntries = (value) => {
+  const entries = Array.isArray(value) ? value.map((item) => [null, item]) : Object.entries(value);
+  return entries.reverse().map(([key, child]) => (key === 'data' && child?.id ? { fileId: child.id } : { value: child }));
+};
+
 module.exports = {
   chefsTemplate,
   falsey,
+  findFileIds,
   getBaseUrl,
   setupMount,
   queryUtils,

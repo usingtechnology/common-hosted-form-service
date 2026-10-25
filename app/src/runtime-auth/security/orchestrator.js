@@ -12,7 +12,9 @@ const { validatePermissionsLogic } = require('./auth/utils/validatePermissions')
 const securityLog = require('./logger');
 
 function isOutsideCredentialForm(actor, resource) {
-  if (!actor || !isApiUser(actor) || !resource?.form) return false;
+  if (!actor || !isApiUser(actor)) return false;
+  // A draft file with no recorded form cannot be tied to the credential's form
+  if (!resource?.form) return !!resource?.file;
   return String(resource.form.id).toLowerCase() !== String(actor.formId).toLowerCase();
 }
 
@@ -71,7 +73,7 @@ module.exports = function makeOrchestrator({ deps, policyStore, authRegistry, re
         orchestratorLogger.warn({
           event: 'api_credential_form_mismatch',
           credentialFormId: who.actor.formId,
-          resourceFormId: resource.form.id,
+          resourceFormId: resource.form?.id,
           method: req.method,
           path: req.path,
         });

@@ -8,6 +8,8 @@ const submissionService = require('../../../../src/forms/submission/service');
 const gatewayService = require('../../../../src/gateway/v1/auth/service');
 const formViewerController = require('../../../../src/webcomponents/v1/form-viewer/controller');
 const printController = require('../../../../src/webcomponents/v1/print/controller');
+const fileController = require('../../../../src/forms/file/controller');
+const filesRoutes = require('../../../../src/webcomponents/v1/files/routes');
 const formViewerRoutes = require('../../../../src/webcomponents/v1/form-viewer/routes');
 const printRoutes = require('../../../../src/webcomponents/v1/print/routes');
 
@@ -21,7 +23,10 @@ const submissionA = '33333333-3333-4333-8333-333333333333';
 const submissionB = '44444444-4444-4444-8444-444444444444';
 const submissionForms = { [submissionA]: formA.id, [submissionB]: formB.id };
 
-const basicAuth = (form) => ({ Authorization: `Basic ${Buffer.from(`${form.id}:${form.secret}`).toString('base64')}` });
+const basicAuth = (form) => {
+  const credentials = Buffer.from(`${form.id}:${form.secret}`).toString('base64');
+  return { Authorization: `Basic ${credentials}` };
+};
 
 const gatewayAuth = async (form) => ({ 'X-Chefs-Gateway-Token': await gatewayService.createToken({ formId: form.id }) });
 
@@ -54,10 +59,13 @@ describe('webcomponents credential form binding', () => {
       jest.spyOn(formViewerController, 'readSubmission').mockImplementation(ok),
       jest.spyOn(printController, 'printSubmission').mockImplementation(ok),
       jest.spyOn(printController, 'printDraft').mockImplementation(ok),
+      jest.spyOn(fileController, 'read').mockImplementation(ok),
+      jest.spyOn(fileController, 'delete').mockImplementation(ok),
     ];
 
     app = express();
     app.use(express.json());
+    app.use('/webcomponents/v1/files', filesRoutes);
     app.use('/webcomponents/v1/form-viewer', formViewerRoutes);
     app.use('/webcomponents/v1/print', printRoutes);
     // eslint-disable-next-line no-unused-vars
@@ -140,6 +148,34 @@ describe('webcomponents credential form binding', () => {
       const res = await request(app)
         .post(`/webcomponents/v1/print/${formA.id}/submission/${submissionB}/print`)
         .set(await gatewayAuth(formA));
+      expect(res.statusCode).toBe(404);
+      expectHandlerNotCalled();
+    });
+  });
+
+  describe('draft files', () => {
+    const draftFile = '66666666-6666-4666-8666-666666666666';
+    const fileUrl = `/webcomponents/v1/files/${draftFile}`;
+    const mockDraft = (formId) => jest.spyOn(fileService, 'read').mockResolvedValue({ id: draftFile, formSubmissionId: null, formId, createdBy: 'api-user' });
+
+    it.each([['GET'], ['DELETE']])('%s returns 200 for a credential on the form the file was uploaded for', async (method) => {
+      mockDraft(formA.id);
+      const res = await request(app)[method.toLowerCase()](fileUrl).set(basicAuth(formA));
+      expect(res.statusCode).toBe(200);
+    });
+
+    it.each([['GET'], ['DELETE']])('%s returns 404 for a credential on another form', async (method) => {
+      mockDraft(formA.id);
+      const res = await request(app)
+        [method.toLowerCase()](fileUrl)
+        .set(await gatewayAuth(formB));
+      expect(res.statusCode).toBe(404);
+      expectHandlerNotCalled();
+    });
+
+    it('returns 404 for a draft file with no recorded form', async () => {
+      mockDraft(null);
+      const res = await request(app).get(fileUrl).set(basicAuth(formA));
       expect(res.statusCode).toBe(404);
       expectHandlerNotCalled();
     });

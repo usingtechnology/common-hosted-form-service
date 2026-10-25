@@ -19,6 +19,17 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+describe('_findFileIds', () => {
+  it('finds the files in the submission data', () => {
+    const data = { submission: { data: { upload: [{ data: { id: 'file-1' } }], grid: [{ upload: [{ data: { id: 'file-2' } }] }] } } };
+    expect(service._findFileIds(data)).toEqual(['file-1', 'file-2']);
+  });
+
+  it.each([[{}], [{ submission: null }]])('finds no files in a body without submission data: %p', (data) => {
+    expect(service._findFileIds(data)).toEqual([]);
+  });
+});
+
 describe('_fetchSubmissionData', () => {
   const formSubmissionId = 'submission-abc';
   const meta = { submissionId: 'sub-1', formVersionId: 'ver-1', formId: 'form-1' };

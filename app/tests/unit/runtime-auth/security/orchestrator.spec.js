@@ -485,10 +485,33 @@ describe('orchestrator', () => {
       expect(next).toHaveBeenCalledWith();
     });
 
-    it('should continue when the resource has no form', async () => {
+    it('should return 404 for a file with no form', async () => {
       const req = { method: 'GET', path: '/files/file-1', query: {} };
       const next = jest.fn();
       mockAuthRegistry.authenticate.mockResolvedValue({ actor: { type: 'gateway', id: 'gateway-user', formId: 'form-a' } });
+      mockResolver.resolve.mockResolvedValue({ form: null, file: { id: 'file-1' } });
+
+      await buildOrchestrator().middleware(req, {}, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: HTTP_STATUS.NOT_FOUND, detail: ERRORS.RESOURCE_NOT_FOUND }));
+      expect(mockEnrichRBAC).not.toHaveBeenCalled();
+    });
+
+    it('should continue when the resource has no form and no file', async () => {
+      const req = { method: 'GET', path: '/assets/x', query: {} };
+      const next = jest.fn();
+      mockAuthRegistry.authenticate.mockResolvedValue({ actor: { type: 'gateway', id: 'gateway-user', formId: 'form-a' } });
+      mockResolver.resolve.mockResolvedValue({ form: null, file: null });
+
+      await buildOrchestrator().middleware(req, {}, next);
+
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('should leave a file with no form to the uploader rule for user actors', async () => {
+      const req = { method: 'GET', path: '/files/file-1', query: {} };
+      const next = jest.fn();
+      mockAuthRegistry.authenticate.mockResolvedValue({ actor: { type: 'user', id: 'user-1' } });
       mockResolver.resolve.mockResolvedValue({ form: null, file: { id: 'file-1' } });
 
       await buildOrchestrator().middleware(req, {}, next);

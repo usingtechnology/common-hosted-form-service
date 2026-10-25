@@ -1,5 +1,39 @@
 const config = require('config');
-const { getBaseUrl, queryUtils, typeUtils } = require('../../../../src/forms/common/utils');
+const { findFileIds, getBaseUrl, queryUtils, typeUtils } = require('../../../../src/forms/common/utils');
+
+describe('findFileIds', () => {
+  const file = (id) => [{ storage: 'chefs', data: { id }, originalName: `${id}.pdf` }];
+  const nested = (depth, leaf) => {
+    let value = leaf;
+    for (let i = 0; i < depth; i++) value = { inner: value };
+    return value;
+  };
+
+  it('finds files at any depth, in the order they appear', () => {
+    const data = {
+      first: file('a'),
+      grid: [{ upload: file('b') }, { container: { upload: file('c') } }],
+      last: file('d'),
+    };
+    expect(findFileIds(data)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('looks inside a data object that has no id', () => {
+    expect(findFileIds({ nestedForm: { data: { upload: file('a') } } })).toEqual(['a']);
+  });
+
+  it('does not look inside a data object that has an id', () => {
+    expect(findFileIds({ upload: [{ data: { id: 'a', copy: file('b') } }] })).toEqual(['a']);
+  });
+
+  it.each([[undefined], [null], ['text'], [42], [{}], [[]]])('returns no files for %p', (data) => {
+    expect(findFileIds(data)).toEqual([]);
+  });
+
+  it('handles data nested far deeper than a call stack allows', () => {
+    expect(findFileIds(nested(100000, { upload: file('a') }))).toEqual(['a']);
+  });
+});
 
 jest.mock('config');
 

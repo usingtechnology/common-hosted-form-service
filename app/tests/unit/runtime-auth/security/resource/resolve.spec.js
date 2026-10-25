@@ -342,6 +342,34 @@ describe('resource/resolve', () => {
       expect(result.file).toEqual(mockFile);
       expect(result.form).toBeNull();
       expect(result.submission).toBeNull();
+      expect(mockFormService.readForm).not.toHaveBeenCalled();
+    });
+
+    it('should resolve a draft file with the form it was uploaded for', async () => {
+      const mockFile = { id: 'file-789', formSubmissionId: null, formId: 'form-123' };
+      const mockForm = { id: 'form-123', identityProviders: [{ code: 'public' }], active: true };
+      mockFileService.read.mockResolvedValue(mockFile);
+      mockFormService.readForm.mockResolvedValue(mockForm);
+
+      const resolver = makeResourceResolver({ deps: makeDeps() });
+      const req = { method: 'GET', path: '/files/789' };
+      const policy = { resourceSpec: { kind: 'file', params: { fileId: 'file-789' } } };
+
+      const result = await resolver.resolve(req, {}, policy);
+
+      expect(mockFormService.readForm).toHaveBeenCalledWith('form-123');
+      expect(result).toMatchObject({ file: mockFile, form: mockForm, submission: null, publicForm: true });
+    });
+
+    it('should return null when the form a draft file was uploaded for is not found', async () => {
+      mockFileService.read.mockResolvedValue({ id: 'file-789', formSubmissionId: null, formId: 'form-123' });
+      mockFormService.readForm.mockRejectedValue(new Error('NotFoundError'));
+
+      const resolver = makeResourceResolver({ deps: makeDeps() });
+      const req = { method: 'GET', path: '/files/789' };
+      const policy = { resourceSpec: { kind: 'file', params: { fileId: 'file-789' } } };
+
+      expect(await resolver.resolve(req, {}, policy)).toBeNull();
     });
 
     it('should return null when fileId not provided', async () => {

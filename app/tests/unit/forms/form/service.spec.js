@@ -250,6 +250,10 @@ jest.mock('../../../../src/components/tenantService', () => ({
 }));
 
 describe('_findFileIds', () => {
+  it.each([[{}], [{ draft: false }], [{ submission: null }], [undefined]])('finds no files in a body without submission data: %p', (data) => {
+    expect(service._findFileIds({}, data)).toEqual([]);
+  });
+
   it('should handle a blank everything', () => {
     const schema = {
       components: [],
@@ -1747,6 +1751,66 @@ describe('createSubmission', () => {
     expect(eventService.formSubmissionEventReceived).toBeCalledTimes(1);
     expect(eventStreamService.onSubmit).toBeCalledTimes(1);
     expect(MockTransaction.commit).toBeCalledTimes(1);
+  });
+
+  describe('files the submission references', () => {
+    const { FileStorage } = require('../../../../src/forms/common/models');
+    const upload = (id) => [{ storage: 'chefs', data: { id }, originalName: `${id}.pdf` }];
+    let fileQuery;
+
+    beforeEach(() => {
+      service.readForm = jest.fn().mockReturnValueOnce({ id: formId, versions: [{ version: 1 }], identityProviders: [] });
+      service.readSubmission = jest.fn().mockReturnValueOnce({});
+      service.readVersion = jest.fn().mockReturnValueOnce({ id: '123', formId: formId, schema: {} });
+      eventService.formSubmissionEventReceived = jest.fn().mockReturnValueOnce();
+      eventStreamService.onSubmit = jest.fn().mockResolvedValueOnce();
+      fileQuery = { findByIds: jest.fn(), patch: jest.fn().mockReturnThis(), whereIn: jest.fn().mockResolvedValue(1) };
+      jest.spyOn(FileStorage, 'query').mockReturnValue(fileQuery);
+    });
+
+    it('refuses a file uploaded for another form before writing anything', async () => {
+      fileQuery.findByIds.mockResolvedValue([{ id: 'file-1', formId: uuid.v4() }]);
+      const data = { draft: false, submission: { data: { upload: upload('file-1') } } };
+
+      await expect(service.createSubmission('123', data, currentUser)).rejects.toThrow(
+        expect.objectContaining({ status: 422, detail: 'The submission references a file uploaded for another form.' })
+      );
+
+      expect(fileQuery.findByIds).toHaveBeenCalledWith(['file-1']);
+      expect(FormSubmission.startTransaction).not.toHaveBeenCalled();
+      expect(fileQuery.patch).not.toHaveBeenCalled();
+    });
+
+    it("links files that record no form or the submission's form", async () => {
+      fileQuery.findByIds.mockResolvedValue([
+        { id: 'file-1', formId: null },
+        { id: 'file-2', formId: formId },
+      ]);
+      const data = { draft: false, submission: { data: { first: upload('file-1'), second: upload('file-2') } } };
+
+      await service.createSubmission('123', data, currentUser);
+
+      expect(fileQuery.patch).toHaveBeenCalledTimes(1);
+      expect(fileQuery.patch).toHaveBeenCalledWith({ formSubmissionId: expect.any(String), updatedBy: currentUser.usernameIdp });
+      expect(fileQuery.whereIn).toHaveBeenCalledWith('id', ['file-1', 'file-2']);
+      expect(MockTransaction.commit).toBeCalledTimes(1);
+    });
+
+    it('skips ids that match no file', async () => {
+      fileQuery.findByIds.mockResolvedValue([]);
+      const data = { draft: false, submission: { data: { upload: upload('not-a-file') } } };
+
+      await service.createSubmission('123', data, currentUser);
+
+      expect(fileQuery.patch).not.toHaveBeenCalled();
+      expect(MockTransaction.commit).toBeCalledTimes(1);
+    });
+
+    it('does not look up files when the submission references none', async () => {
+      await service.createSubmission('123', { draft: false, submission: { data: { name: 'Ada' } } }, currentUser);
+
+      expect(fileQuery.findByIds).not.toHaveBeenCalled();
+    });
   });
 
   it('enqueues a submission package job and sends the received email for a non-draft submission', async () => {
