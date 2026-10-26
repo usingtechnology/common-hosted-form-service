@@ -1114,11 +1114,14 @@ describe('ChefsFormViewer internals', () => {
       expect(el._isBusy).toBe(false);
     });
 
-    it('reports no completion when a beforeLoad listener cancels the reload', async () => {
+    it('leaves the form as it is when a beforeLoad listener cancels the reload', async () => {
       globalThis.fetch.mockResolvedValueOnce({
         ok: true,
         json: () => Promise.resolve({ id: 'sub-1' }),
       });
+      const instance = el.formioInstance;
+      el.readOnly = false;
+      el._jwtRefreshTimer = 42;
       el.addEventListener('formio:beforeLoad', (e) => e.preventDefault(), {
         once: true,
       });
@@ -1132,6 +1135,12 @@ describe('ChefsFormViewer internals', () => {
       expect(el._initFormio).not.toHaveBeenCalled();
       expect(events).toEqual([]);
       expect(el._isBusy).toBe(false);
+      // Nothing was applied or torn down
+      expect(el.formioInstance).toBe(instance);
+      expect(el.submissionId).toBeNull();
+      expect(el.readOnly).toBe(false);
+      expect(el._jwtRefreshTimer).toBe(42);
+      el._jwtRefreshTimer = null;
     });
 
     it('does not clear a form that another call is loading', async () => {

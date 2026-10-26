@@ -996,6 +996,17 @@
      * @private
      */
     async _loadHoldingLock() {
+      if (!this._proceedWithLoad()) return false;
+      return this._loadAfterBeforeLoad();
+    }
+
+    /**
+     * Fires formio:beforeLoad. When a listener cancels it, releases the busy lock the
+     * caller holds.
+     * @returns {boolean} Whether to go on loading
+     * @private
+     */
+    _proceedWithLoad() {
       this._log.info('load:begin', { formId: this.formId });
 
       const proceed = this._emit(
@@ -1003,11 +1014,16 @@
         { formId: this.formId },
         { cancelable: true }
       );
-      if (!proceed) {
-        this._releaseBusyLock();
-        return false;
-      }
+      if (!proceed) this._releaseBusyLock();
+      return proceed;
+    }
 
+    /**
+     * The rest of _loadHoldingLock, once formio:beforeLoad has gone ahead.
+     * @returns {Promise<boolean>} True once the form has loaded
+     * @private
+     */
+    async _loadAfterBeforeLoad() {
       try {
         await this._loadSchema();
         await this._initFormio();
@@ -1055,6 +1071,8 @@
       if (!this.isConnected) return false;
       if (!this._holdsLock(lock) && !this._acquireBusyLock('reload'))
         return false;
+      // Asked first, so a cancelled load leaves the current form, its state and token refresh as they are
+      if (!this._proceedWithLoad()) return false;
       Object.assign(this, state);
       this._log.info('reload:afterSubmit');
       try {
@@ -1063,7 +1081,7 @@
         this._releaseBusyLock();
         throw error;
       }
-      return this._loadHoldingLock();
+      return this._loadAfterBeforeLoad();
     }
 
     /**

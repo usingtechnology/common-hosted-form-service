@@ -89,7 +89,7 @@ Changes in 1.1.0 from 1.0.0:
 - After a submit, a form whose settings hide submission contents on success is cleared instead of reloaded read-only, with an API key or token as well as anonymously. Clearing keeps the `auth-token` refresh running, so a later `load()` still works.
 - `refreshAuthToken()` does nothing without an `auth-token`, instead of sending an empty refresh that fails.
 - A `submit()` or `draft()` that a `formio:ready` handler starts during the reload after a submit keeps the busy lock until it finishes. In 1.0.0 the first call released it early.
-- When the reload or clear after a submit does not happen, because the element was removed, another call holds the lock or a `formio:beforeLoad` listener cancelled the load, the submitted data is not applied to the current form and `formio:autoReloadComplete` does not fire.
+- When the reload or clear after a submit does not happen, because the element was removed, another call holds the lock or a `formio:beforeLoad` listener cancelled the load, the current form stays as it is, the submitted data is not applied and `formio:autoReloadComplete` does not fire. `formio:beforeLoad` fires before the current form is removed.
 
 ### Authentication
 
@@ -118,7 +118,7 @@ A form that uses the Public login option can be embedded without an API key or g
 ```html
 <script
   src="https://<chefs-host>/app/embed/1.1.0/embed/chefs-form-viewer-embed.min.js?form-id=<formId>"
-  integrity="sha384-vwKyehVeCdWgM5RMdI/ZnNN6BnyJedjQBn+X12lXXYXF8urtwgplfsZfrfa8bATF"
+  integrity="sha384-rY3qdd4SrJB9vDTTTPvW69eTIxfNnPQMuP7ewM5VBAMbVH/ENwXKh5ePZEkdaEtY"
   crossorigin="anonymous"
 ></script>
 ```
