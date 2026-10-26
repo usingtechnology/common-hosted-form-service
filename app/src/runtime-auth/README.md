@@ -188,6 +188,13 @@ chefSecurity.inline({
   requiredPermissions: [P.FORM_READ],
 });
 
+// Published form resource: the active form with its identity providers and published
+// versions (with their schemas), for handlers that serve or submit the published form
+chefSecurity.inline({
+  resourceSpec: { kind: 'publishedForm' }, // formId from :formId
+  requiredPermissions: [P.FORM_READ],
+});
+
 // Submission resource (needs formId + submissionId)
 chefSecurity.inline({
   resourceSpec: {
@@ -212,6 +219,8 @@ chefSecurity.inline({
 ```
 
 The `params` are usually extracted from `req.params`, but you can override them if needed.
+
+The resolved resource is on `req.securityContext.resource` as `{ form, submission, version, file, publicForm, activeForm }`. A `submissionFromForm` resource keeps the whole submission read (`submission`, `version`, `form`), so a handler can use it instead of reading the submission again; `version` is `null` for other kinds.
 
 ## Overriding Dependencies
 

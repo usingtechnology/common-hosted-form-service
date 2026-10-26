@@ -31,22 +31,28 @@ describe('webcomponents/v1/form-viewer controller', () => {
     });
   });
 
+  // runtime-auth resolves the resource before the handler runs; these tests hand it over the same way
+  const withResource = (resource, req) => ({ ...req, securityContext: { resource } });
+
   describe('readFormSchema success paths', () => {
-    it('returns first version schema with 200', async () => {
-      const mockForm = { name: 'Form', versions: [{ id: 'ver-1', schema: { display: 'form' } }] };
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue(mockForm);
-      const req = { params: { formId: uuidv4() }, query: {} };
+    beforeEach(() => {
+      jest.spyOn(service, 'readPublishedForm');
+    });
+
+    it('returns first version schema with 200, without reading the form again', async () => {
+      const form = { name: 'Form', versions: [{ id: 'ver-1', schema: { display: 'form' } }] };
+      const req = withResource({ form }, { params: { formId: uuidv4() }, query: {} });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
       await controller.readFormSchema(req, res, next);
-      expect(service.readPublishedForm).toHaveBeenCalledWith(req.params.formId, req.query);
+      expect(service.readPublishedForm).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ form: { name: 'Form', identityProviders: [] }, schema: mockForm.versions[0].schema });
+      expect(res.json).toHaveBeenCalledWith({ form: { name: 'Form', identityProviders: [] }, schema: form.versions[0].schema });
       expect(next).not.toHaveBeenCalled();
     });
 
     it('returns only the form fields the web component reads', async () => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({
+      const form = {
         id: 'form-1',
         name: 'Form',
         enableSubmitterDraft: true,
@@ -54,8 +60,8 @@ describe('webcomponents/v1/form-viewer controller', () => {
         createdBy: 'JDOE@idir',
         identityProviders: [{ code: 'idir', createdBy: 'migration-002' }],
         versions: [{ id: 'ver-1', createdBy: 'JDOE@idir', schema: { display: 'form' } }],
-      });
-      const req = { params: { formId: uuidv4() }, query: {} };
+      };
+      const req = withResource({ form }, { params: { formId: uuidv4() }, query: {} });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await controller.readFormSchema(req, res, jest.fn());
       expect(res.json).toHaveBeenCalledWith({
@@ -65,46 +71,41 @@ describe('webcomponents/v1/form-viewer controller', () => {
     });
 
     it('falls back to form.schema when versions missing', async () => {
-      const mockForm = { schema: { display: 'form' } };
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue(mockForm);
-      const req = { params: { formId: uuidv4() }, query: {} };
+      const form = { schema: { display: 'form' } };
+      const req = withResource({ form }, { params: { formId: uuidv4() }, query: {} });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
       await controller.readFormSchema(req, res, next);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ form: { identityProviders: [] }, schema: mockForm.schema });
-    });
-
-    it('calls next(err) on service error', async () => {
-      const boom = new Error('boom');
-      jest.spyOn(service, 'readPublishedForm').mockRejectedValue(boom);
-      const req = { params: { formId: uuidv4() }, query: {} };
-      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-      const next = jest.fn();
-      await controller.readFormSchema(req, res, next);
-      expect(next).toHaveBeenCalledWith(boom);
+      expect(res.json).toHaveBeenCalledWith({ form: { identityProviders: [] }, schema: form.schema });
     });
   });
 
   describe('readSubmission', () => {
-    it('returns only the submitted data', async () => {
-      jest.spyOn(submissionService, 'read').mockResolvedValue({
-        submission: { id: 'sub-1', submission: { data: { a: 1 }, metadata: { userAgent: 'x' } }, createdBy: 'JDOE@idir' },
-        version: { id: 'ver-1', createdBy: 'JDOE@idir' },
-        form: { id: 'form-1', createdBy: 'JDOE@idir', submissionReceivedEmails: ['owner@example.com'] },
-      });
-      const req = { params: { formId: uuidv4(), formSubmissionId: uuidv4() } };
+    it('returns only the submitted data, without reading the submission again', async () => {
+      jest.spyOn(submissionService, 'read');
+      const submission = { id: 'sub-1', submission: { data: { a: 1 }, metadata: { userAgent: 'x' } }, createdBy: 'JDOE@idir' };
+      const req = withResource(
+        { submission, version: { id: 'ver-1', createdBy: 'JDOE@idir' }, form: { id: 'form-1', createdBy: 'JDOE@idir' } },
+        { params: { formId: uuidv4(), formSubmissionId: uuidv4() } }
+      );
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await controller.readSubmission(req, res, jest.fn());
+      expect(submissionService.read).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ submission: { submission: { data: { a: 1 } } } });
     });
   });
 
   describe('createSubmission success/failure', () => {
+    const submitReq = (form, body, currentUser) => withResource({ form }, { params: { formId: uuidv4() }, body, currentUser });
+
+    beforeEach(() => {
+      jest.spyOn(service, 'readPublishedForm');
+    });
+
     it('returns 400 when no published version', async () => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({ versions: [] });
-      const req = { params: { formId: uuidv4() }, body: { submission: { data: {} } } };
+      const req = submitReq({ versions: [] }, { submission: { data: {} } });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
       await controller.createSubmission(req, res, next);
@@ -113,7 +114,6 @@ describe('webcomponents/v1/form-viewer controller', () => {
     });
 
     it('creates submission and returns only its id, confirmation id, time and draft flag', async () => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({ versions: [{ id: 'ver-1' }] });
       jest.spyOn(service, 'createSubmission').mockResolvedValue({
         id: 'sub-1',
         confirmationId: 'SUB1',
@@ -124,14 +124,11 @@ describe('webcomponents/v1/form-viewer controller', () => {
         dedupKey: null,
         submission: { data: { a: 1 }, metadata: { userAgent: 'x' } },
       });
-      const req = {
-        params: { formId: uuidv4() },
-        body: { submission: { data: { a: 1 } } },
-        currentUser: { id: 'external-user' },
-      };
+      const req = submitReq({ versions: [{ id: 'ver-1' }] }, { submission: { data: { a: 1 } } }, { id: 'external-user' });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
       await controller.createSubmission(req, res, next);
+      expect(service.readPublishedForm).not.toHaveBeenCalled();
       expect(service.createSubmission).toHaveBeenCalledWith('ver-1', req.body, expect.objectContaining({ id: 'external-user' }));
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json.mock.calls[0][0]).toStrictEqual({ id: 'sub-1', confirmationId: 'SUB1', createdAt: '2026-10-25T00:00:00.000Z', draft: false });
@@ -139,16 +136,10 @@ describe('webcomponents/v1/form-viewer controller', () => {
     });
 
     it('saves a draft when the form allows drafts', async () => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({
-        enableSubmitterDraft: true,
-        identityProviders: [{ code: 'idir' }],
-        versions: [{ id: 'ver-1' }],
-      });
       jest.spyOn(service, 'createSubmission').mockResolvedValue({ id: 'draft-1', draft: true });
-      const req = { params: { formId: uuidv4() }, body: { draft: true, submission: { data: { a: 1 } } } };
+      const req = submitReq({ enableSubmitterDraft: true, identityProviders: [{ code: 'idir' }], versions: [{ id: 'ver-1' }] }, { draft: true, submission: { data: { a: 1 } } });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-      const next = jest.fn();
-      await controller.createSubmission(req, res, next);
+      await controller.createSubmission(req, res, jest.fn());
       expect(service.createSubmission).toHaveBeenCalledWith('ver-1', req.body, undefined);
       expect(res.status).toHaveBeenCalledWith(201);
     });
@@ -158,35 +149,30 @@ describe('webcomponents/v1/form-viewer controller', () => {
       ['the setting is missing', { identityProviders: [{ code: 'idir' }] }],
       ['the form is Public', { enableSubmitterDraft: true, identityProviders: [{ code: 'public' }] }],
     ])('returns 403 for a draft when %s', async (_name, settings) => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({ ...settings, versions: [{ id: 'ver-1' }] });
       jest.spyOn(service, 'createSubmission');
-      const req = { params: { formId: uuidv4() }, body: { draft: true, submission: { data: { a: 1 } } } };
+      const req = submitReq({ ...settings, versions: [{ id: 'ver-1' }] }, { draft: true, submission: { data: { a: 1 } } });
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-      const next = jest.fn();
-      await controller.createSubmission(req, res, next);
+      await controller.createSubmission(req, res, jest.fn());
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({ detail: 'This form does not allow saving drafts.' });
       expect(service.createSubmission).not.toHaveBeenCalled();
     });
 
     it('accepts a final submission on a form without drafts', async () => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({
-        enableSubmitterDraft: false,
-        identityProviders: [{ code: 'public' }],
-        versions: [{ id: 'ver-1' }],
-      });
       jest.spyOn(service, 'createSubmission').mockResolvedValue({ id: 'sub-1' });
-      const req = { params: { formId: uuidv4() }, body: { draft: false, submission: { data: { a: 1 } } } };
+      const req = submitReq(
+        { enableSubmitterDraft: false, identityProviders: [{ code: 'public' }], versions: [{ id: 'ver-1' }] },
+        { draft: false, submission: { data: { a: 1 } } }
+      );
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       await controller.createSubmission(req, res, jest.fn());
       expect(res.status).toHaveBeenCalledWith(201);
     });
 
     it('calls next(err) on service error', async () => {
-      jest.spyOn(service, 'readPublishedForm').mockResolvedValue({ versions: [{ id: 'ver-1' }] });
       const boom = new Error('boom');
       jest.spyOn(service, 'createSubmission').mockRejectedValue(boom);
-      const req = { params: { formId: uuidv4() }, body: {} };
+      const req = submitReq({ versions: [{ id: 'ver-1' }] }, {});
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
       await controller.createSubmission(req, res, next);

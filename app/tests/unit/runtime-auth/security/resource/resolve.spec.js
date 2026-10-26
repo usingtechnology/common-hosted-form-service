@@ -76,6 +76,7 @@ describe('resource/resolve', () => {
       expect(result).toEqual({
         form: null,
         submission: null,
+        version: null,
         file: null,
         publicForm: false,
         activeForm: false,
@@ -92,6 +93,7 @@ describe('resource/resolve', () => {
       expect(result).toEqual({
         form: null,
         submission: null,
+        version: null,
         file: null,
         publicForm: false,
         activeForm: false,
@@ -108,6 +110,7 @@ describe('resource/resolve', () => {
       expect(result).toEqual({
         form: null,
         submission: null,
+        version: null,
         file: null,
         publicForm: false,
         activeForm: false,
@@ -210,6 +213,18 @@ describe('resource/resolve', () => {
       expect(result.file).toBeNull();
     });
 
+    it('should keep the version the submission read loads', async () => {
+      const version = { id: 'version-1', version: 3 };
+      mockSubmissionService.read.mockResolvedValue({ submission: { id: 'sub-456' }, form: { id: 'form-123' }, version });
+
+      const resolver = makeResourceResolver({ deps: makeDeps() });
+      const policy = { resourceSpec: { kind: 'submissionFromForm', params: { formId: 'form-123', submissionId: 'sub-456' } } };
+
+      const result = await resolver.resolve({ method: 'GET', path: '/x' }, {}, policy);
+
+      expect(result.version).toBe(version);
+    });
+
     it('should return null when submissionId not provided', async () => {
       const resolver = makeResourceResolver({ deps: makeDeps() });
       const req = { method: 'GET', path: '/forms/123/submissions' };
@@ -297,6 +312,43 @@ describe('resource/resolve', () => {
 
       expect(result).toBeNull();
       expect(mockLogger.debug).toHaveBeenCalled();
+    });
+  });
+
+  describe('resolve - publishedForm', () => {
+    const policy = { resourceSpec: { kind: 'publishedForm', params: { formId: 'form-123' } } };
+
+    beforeEach(() => {
+      mockFormService.readPublishedForm = jest.fn();
+    });
+
+    it('should resolve the form with its published versions', async () => {
+      const form = { id: 'form-123', active: true, identityProviders: [{ code: 'public' }], versions: [{ id: 'version-1', schema: {} }] };
+      mockFormService.readPublishedForm.mockResolvedValue(form);
+
+      const result = await makeResourceResolver({ deps: makeDeps() }).resolve({ method: 'GET', path: '/x' }, {}, policy);
+
+      expect(mockFormService.readPublishedForm).toHaveBeenCalledWith('form-123');
+      expect(mockFormService.readForm).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ form, submission: null, file: null, publicForm: true, activeForm: true });
+    });
+
+    it('should resolve a form that has no published version', async () => {
+      mockFormService.readPublishedForm.mockResolvedValue({ id: 'form-123', active: true, identityProviders: [], versions: [] });
+
+      const result = await makeResourceResolver({ deps: makeDeps() }).resolve({ method: 'GET', path: '/x' }, {}, policy);
+
+      expect(result.form.versions).toEqual([]);
+    });
+
+    it.each([
+      ['the form is not found', () => mockFormService.readPublishedForm.mockRejectedValue(new Error('NotFoundError'))],
+      ['no formId is given', () => {}],
+    ])('should return null when %s', async (name, arrange) => {
+      arrange();
+      const spec = name === 'no formId is given' ? { resourceSpec: { kind: 'publishedForm', params: {} } } : policy;
+
+      expect(await makeResourceResolver({ deps: makeDeps() }).resolve({ method: 'GET', path: '/x' }, {}, spec)).toBeNull();
     });
   });
 

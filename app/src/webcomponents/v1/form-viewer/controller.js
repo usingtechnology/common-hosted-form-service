@@ -3,7 +3,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const service = require('../../../forms/form/service');
-const submissionService = require('../../../forms/submission/service');
 const { formSchemaResponse, submissionResponse, submitResponse } = require('../../common/responses');
 const { releaseDir } = require('../../common/releases');
 
@@ -22,11 +21,8 @@ module.exports = {
         return;
       }
 
-      // Get the published form data
-      const response = await service.readPublishedForm(formId, req.query);
-
-      // Return the form schema in the format expected by the web component
-      res.status(200).json(formSchemaResponse(response));
+      // runtime-auth has loaded the active published form from the path
+      res.status(200).json(formSchemaResponse(req.securityContext.resource.form));
     } catch (error) {
       next(error);
     }
@@ -43,8 +39,8 @@ module.exports = {
         return;
       }
 
-      // Get the published form to get the version ID
-      const form = await service.readPublishedForm(formId);
+      // runtime-auth has loaded the active published form from the path
+      const { form } = req.securityContext.resource;
       const versionId = form.versions?.[0]?.id;
 
       if (!versionId) {
@@ -83,14 +79,8 @@ module.exports = {
         res.status(400).json({ detail: `Bad submissionId "${submissionId}".` });
         return;
       }
-      // Read the submission using the service
-      // Replicate /api/v1/submission/<id> call.
-      const submission = await submissionService.read(submissionId);
-      if (!submission) {
-        res.status(404).json({ detail: 'Submission not found' });
-        return;
-      }
-      res.status(200).json(submissionResponse(submission));
+      // runtime-auth has read the submission and checked it belongs to the form in the path
+      res.status(200).json(submissionResponse({ submission: req.securityContext.resource.submission }));
     } catch (error) {
       next(error);
     }

@@ -28,6 +28,12 @@ const wrongApiKey = Buffer.from(`${publicForm}:wrong`).toString('base64');
 
 describe('webcomponents/v1/public routes', () => {
   let app;
+  let handlers;
+
+  // runtime-auth reads the published form itself, so a refused request shows as a handler that never ran
+  const expectNoHandler = () => {
+    for (const handler of handlers) expect(handler).not.toHaveBeenCalled();
+  };
 
   beforeEach(() => {
     jest.spyOn(authService, 'readUser').mockResolvedValue({ id: 'public-user-id', username: 'public-user', idpCode: 'public' });
@@ -36,12 +42,12 @@ describe('webcomponents/v1/public routes', () => {
       if (!form) throw new Error('NotFoundError');
       return { id: formId, identityProviders: form.identityProviders, active: true };
     });
-    jest.spyOn(formService, 'readPublishedForm').mockImplementation(async (formId) => ({
-      id: formId,
-      name: 'Form',
-      identityProviders: forms[formId].identityProviders,
-      versions: [{ id: 'version-1', schema }],
-    }));
+    // runtime-auth loads the published form for these routes, so this is what it resolves
+    jest.spyOn(formService, 'readPublishedForm').mockImplementation(async (formId) => {
+      const form = forms[formId];
+      if (!form) throw new Error('NotFoundError');
+      return { id: formId, name: 'Form', active: true, identityProviders: form.identityProviders, versions: [{ id: 'version-1', schema }] };
+    });
     jest.spyOn(formService, 'createSubmission').mockResolvedValue({
       id: '44444444-4444-4444-8444-444444444444',
       confirmationId: '44444444',
@@ -50,6 +56,8 @@ describe('webcomponents/v1/public routes', () => {
       submission: body.submission,
     });
     jest.spyOn(webcomponentSettingsService, 'readAllowedOrigins').mockImplementation(async (formId) => forms[formId].allowedOrigins);
+
+    handlers = [jest.spyOn(publicController, 'readFormSchema'), jest.spyOn(publicController, 'createSubmission')];
 
     app = express();
     app.use(express.json());
@@ -100,7 +108,7 @@ describe('webcomponents/v1/public routes', () => {
     it('returns 404 for a form that does not use the Public identity provider', async () => {
       const res = await request(app).get(`/webcomponents/v1/public/${loginForm}/schema`).set('Origin', allowedOrigin);
       expect(res.statusCode).toBe(404);
-      expect(formService.readPublishedForm).not.toHaveBeenCalled();
+      expectNoHandler();
     });
 
     it('returns 404 for an unknown form', async () => {
@@ -116,7 +124,7 @@ describe('webcomponents/v1/public routes', () => {
       const res = await request(app).get(`/webcomponents/v1/public/${publicForm}/schema`).set('Origin', origin);
       expect(res.statusCode).toBe(403);
       expect(res.body).toEqual({ detail: 'This website is not allowed to embed this form.' });
-      expect(formService.readPublishedForm).not.toHaveBeenCalled();
+      expectNoHandler();
     });
 
     it('returns 403 when the request has no Origin', async () => {
@@ -165,7 +173,7 @@ describe('webcomponents/v1/public routes', () => {
     ])('%s %s still checks the form in the path', async (method, url) => {
       const res = await request(app)[method.toLowerCase()](url).set('Origin', allowedOrigin).send(body);
       expect(res.statusCode).toBe(404);
-      expect(formService.readPublishedForm).not.toHaveBeenCalled();
+      expectNoHandler();
       expect(formService.createSubmission).not.toHaveBeenCalled();
     });
   });
@@ -215,7 +223,7 @@ describe('webcomponents/v1/public routes', () => {
     });
 
     it('returns 400 when the form has no published version', async () => {
-      formService.readPublishedForm.mockResolvedValueOnce({ id: publicForm, versions: [] });
+      formService.readPublishedForm.mockResolvedValueOnce({ id: publicForm, active: true, identityProviders: [{ code: 'public' }], versions: [] });
       const res = await submit(publicForm);
       expect(res.statusCode).toBe(400);
       expect(formService.createSubmission).not.toHaveBeenCalled();

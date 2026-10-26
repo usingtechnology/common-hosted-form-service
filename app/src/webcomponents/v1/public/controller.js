@@ -10,8 +10,8 @@ module.exports = {
    */
   readFormSchema: async (req, res, next) => {
     try {
-      const form = await service.readPublishedForm(req.params.formId);
-      res.status(200).json(formSchemaResponse(form));
+      // runtime-auth has loaded the active published form from the path
+      res.status(200).json(formSchemaResponse(req.securityContext.resource.form));
     } catch (error) {
       next(error);
     }
@@ -27,8 +27,7 @@ module.exports = {
         throw new Problem(400, { detail: `'submission.data' is required.` });
       }
 
-      const form = await service.readPublishedForm(req.params.formId);
-      const version = form.versions?.[0];
+      const version = req.securityContext.resource.form.versions?.[0];
       if (!version) {
         throw new Problem(400, { detail: 'No published version found for this form.' });
       }

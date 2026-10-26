@@ -13,12 +13,14 @@ routes.param('formId', validateParameter.validateFormId);
 // Anonymous endpoints for Public forms embedded without an API key.
 // Credentials are stripped where these routes are mounted.
 // Order: runtime-auth (Public forms only) -> requireAllowedOrigin -> handler
+// runtime-auth loads the published form from :formId, and the handlers use it.
 
 routes.get(
   '/:formId/schema',
   chefSecurity.inline({
     allowedAuth: AuthCombinations.PUBLIC_ONLY,
     requiredPermissions: [P.FORM_READ],
+    resourceSpec: { kind: 'publishedForm' },
   }),
   requireAllowedOrigin,
   async (req, res, next) => {
@@ -31,6 +33,7 @@ routes.post(
   chefSecurity.inline({
     allowedAuth: AuthCombinations.PUBLIC_ONLY,
     requiredPermissions: [P.FORM_READ, P.SUBMISSION_CREATE],
+    resourceSpec: { kind: 'publishedForm' },
   }),
   requireAllowedOrigin,
   async (req, res, next) => {

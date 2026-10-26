@@ -47,6 +47,11 @@ describe('webcomponents credential form binding', () => {
       const form = forms[formId];
       return form ? { id: form.id, identityProviders: [], active: true } : undefined;
     });
+    // The schema, submit and print-draft routes resolve the published form instead
+    jest.spyOn(formService, 'readPublishedForm').mockImplementation(async (formId) => {
+      const form = forms[formId];
+      return form ? { id: form.id, identityProviders: [], active: true, versions: [] } : undefined;
+    });
     jest.spyOn(submissionService, 'read').mockImplementation(async (submissionId) => {
       const formId = submissionForms[submissionId];
       if (!formId) throw new Error('NotFoundError');
