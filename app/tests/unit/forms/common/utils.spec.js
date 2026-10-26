@@ -2,7 +2,8 @@ const config = require('config');
 const { findFileIds, getBaseUrl, queryUtils, typeUtils } = require('../../../../src/forms/common/utils');
 
 describe('findFileIds', () => {
-  const file = (id) => [{ storage: 'chefs', data: { id }, originalName: `${id}.pdf` }];
+  const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const file = (fileId) => [{ storage: 'chefs', data: { id: fileId }, originalName: `${fileId}.pdf` }];
   const nested = (depth, leaf) => {
     let value = leaf;
     for (let i = 0; i < depth; i++) value = { inner: value };
@@ -11,19 +12,33 @@ describe('findFileIds', () => {
 
   it('finds files at any depth, in the order they appear', () => {
     const data = {
-      first: file('a'),
-      grid: [{ upload: file('b') }, { container: { upload: file('c') } }],
-      last: file('d'),
+      first: file(id(1)),
+      grid: [{ upload: file(id(2)) }, { container: { upload: file(id(3)) } }],
+      last: file(id(4)),
     };
-    expect(findFileIds(data)).toEqual(['a', 'b', 'c', 'd']);
+    expect(findFileIds(data)).toEqual([id(1), id(2), id(3), id(4)]);
   });
 
   it('looks inside a data object that has no id', () => {
-    expect(findFileIds({ nestedForm: { data: { upload: file('a') } } })).toEqual(['a']);
+    expect(findFileIds({ nestedForm: { data: { upload: file(id(1)) } } })).toEqual([id(1)]);
   });
 
-  it('does not look inside a data object that has an id', () => {
-    expect(findFileIds({ upload: [{ data: { id: 'a', copy: file('b') } }] })).toEqual(['a']);
+  it('does not look inside a data object whose id is a file id', () => {
+    expect(findFileIds({ upload: [{ data: { id: id(1), copy: file(id(2)) } }] })).toEqual([id(1)]);
+  });
+
+  it('accepts a file id in upper case', () => {
+    expect(findFileIds({ upload: file(id(1).toUpperCase()) })).toEqual([id(1).toUpperCase()]);
+  });
+
+  it.each([
+    ['a string that is not a UUID', 'abc'],
+    ['a UUID that is not version 4', '00000000-0000-1000-8000-000000000001'],
+    ['a number', 42],
+    ['an array of UUIDs', ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002']],
+    ['an object', { id: '00000000-0000-4000-8000-000000000001' }],
+  ])('does not count %s as a file id, and looks inside that data object', (_name, value) => {
+    expect(findFileIds({ container: { data: { id: value, upload: file(id(9)) } } })).toEqual([id(9)]);
   });
 
   it.each([[undefined], [null], ['text'], [42], [{}], [[]]])('returns no files for %p', (data) => {
@@ -31,7 +46,7 @@ describe('findFileIds', () => {
   });
 
   it('handles data nested far deeper than a call stack allows', () => {
-    expect(findFileIds(nested(100000, { upload: file('a') }))).toEqual(['a']);
+    expect(findFileIds(nested(100000, { upload: file(id(1)) }))).toEqual([id(1)]);
   });
 });
 

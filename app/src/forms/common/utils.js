@@ -2,6 +2,10 @@ const config = require('config');
 const falsey = require('falsey');
 const clone = require('lodash/clone');
 const _ = require('lodash');
+const { Regex } = require('./constants');
+
+// CHEFS file ids are UUIDs, as stored in file_storage.id
+const FILE_ID = new RegExp(Regex.UUID);
 
 const setupMount = (type, app, routeConfig) => {
   const basePath = `/${type}`;
@@ -313,9 +317,10 @@ const chefsTemplate = (submission) => {
 };
 
 /**
- * Finds the ids of the files submission data references: the id of each `data` object that has
- * one, at any depth. Walks the data with a stack instead of recursion, so deeply nested input
- * cannot overflow the call stack.
+ * Finds the ids of the files submission data references: the id of each `data` object whose id
+ * is a UUID string, at any depth. Any other id (a number, an array, any other string) is not a
+ * file reference, so that object is searched like any other. Walks the data with a stack instead
+ * of recursion, so deeply nested input cannot overflow the call stack.
  * @param {*} submissionData the submission data
  * @returns {string[]} the file ids, in the order they appear
  */
@@ -337,8 +342,10 @@ const findFileIds = (submissionData) => {
 // The stack entries for an object's or array's children, last to first, so they come off the stack in order
 const fileSearchEntries = (value) => {
   const entries = Array.isArray(value) ? value.map((item) => [null, item]) : Object.entries(value);
-  return entries.toReversed().map(([key, child]) => (key === 'data' && child?.id ? { fileId: child.id } : { value: child }));
+  return entries.toReversed().map(([key, child]) => (key === 'data' && isFileId(child?.id) ? { fileId: child.id } : { value: child }));
 };
+
+const isFileId = (id) => typeof id === 'string' && FILE_ID.test(id);
 
 module.exports = {
   chefsTemplate,

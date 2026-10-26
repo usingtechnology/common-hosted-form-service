@@ -21,8 +21,9 @@ afterEach(() => {
 
 describe('_findFileIds', () => {
   it('finds the files in the submission data', () => {
-    const data = { submission: { data: { upload: [{ data: { id: 'file-1' } }], grid: [{ upload: [{ data: { id: 'file-2' } }] }] } } };
-    expect(service._findFileIds(data)).toEqual(['file-1', 'file-2']);
+    const [file1, file2] = [uuid.v4(), uuid.v4()];
+    const data = { submission: { data: { upload: [{ data: { id: file1 } }], grid: [{ upload: [{ data: { id: file2 } }] }] } } };
+    expect(service._findFileIds(data)).toEqual([file1, file2]);
   });
 
   it.each([[{}], [{ submission: null }]])('finds no files in a body without submission data: %p', (data) => {

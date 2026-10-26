@@ -17,8 +17,9 @@ const nextChild = (cursor) => {
 
 /**
  * The nesting depth of a parsed JSON value: 0 for a primitive, 1 for an object or array that
- * holds only primitives. Keeps one cursor per open container, so memory grows with the depth,
- * not the size, of the value; stops once the depth passes the limit.
+ * holds only primitives. Keeps one cursor per open container, holding that object's keys
+ * (arrays are read in place), so memory grows with the depth and the widest open object, not
+ * with the whole value; stops once the depth passes the limit.
  *
  * @param {*} value the parsed JSON value.
  * @param {number} limit stop counting once the depth passes this.
